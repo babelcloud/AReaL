@@ -1,0 +1,86 @@
+# CUA Agent PPO training (genv + gbox-mini-agent).
+# Tasks are loaded from gym (gym_base_url, gym_id); dataset path is ignored.
+# Set MODEL_BASE_URL / model_base_url to vLLM/proxy URL for gbox-mini-agent.
+
+experiment_name: cua-agent
+trial_name: run0
+
+seed: 42
+tokenizer_path: ${actor.path}
+
+workflow: cua_workflow.CUAAgentWorkflow
+eval_workflow: ${workflow}
+
+max_turns: 30
+max_task_time_seconds: 600
+max_turn_time_seconds: 120
+
+gym_base_url: http://localhost:5010
+gym_id: ""  # set via override or env
+gym_train_ratio: 0.8
+gym_split_type: train
+gym_limit: null
+gym_seed: 42
+
+gbox_mini_agent_base_url: http://localhost:3000
+gbox_mini_agent_agent: mai-ui
+gbox_mini_agent_standard_action_space: mobile
+model_base_url: ""  # vLLM/OpenAI-compatible URL for gbox model.baseUrl
+model_name: ""
+
+monitor_base_url: ""
+project_id: ""
+project_token: ""
+
+cluster:
+  n_nodes: 1
+  n_gpus_per_node: 1
+  fileroot: /tmp/areal/cua_experiments
+
+allocation_mode: ""
+
+rollout:
+  max_concurrent_rollouts: 8
+  consumer_batch_size: ${train_dataset.batch_size}
+  fileroot: ${cluster.fileroot}
+  tokenizer_path: ${tokenizer_path}
+
+gconfig:
+  n_samples: 1
+  min_new_tokens: 0
+  max_new_tokens: 2048
+  temperature: 0.0
+
+actor:
+  path: Qwen/Qwen2.5-1.5B-Instruct  # or your CUA model
+  init_from_scratch: false
+  dtype: bfloat16
+  weight_update_mode: disk
+
+ref:
+  path: ${actor.path}
+  dtype: ${actor.dtype}
+
+train_dataset:
+  path: cua_gym  # ignored; tasks from gym
+  type: rl
+  batch_size: 4
+  shuffle: true
+
+valid_dataset:
+  path: cua_gym
+  type: rl
+  batch_size: 2
+
+saver:
+  fileroot: ${cluster.fileroot}
+
+recover:
+  mode: disabled
+
+evaluator:
+  fileroot: ${cluster.fileroot}
+
+stats_logger:
+  wandb:
+    mode: disabled
