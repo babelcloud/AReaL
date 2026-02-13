@@ -14,6 +14,9 @@ from transformers import PreTrainedTokenizerFast
 
 from areal.api.engine_api import InferenceEngine
 from areal.api.workflow_api import RolloutWorkflow
+from areal.utils import name_resolve, names
+
+import httpx
 
 from cua_rl.core.genv_execution import (
     evaluate_execution,
@@ -28,6 +31,33 @@ from cua_rl.trajectory_utils import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Cache model id from GET /v1/models per base_url to avoid repeated calls
+_v1_models_id_cache: dict[str, str] = {}
+
+
+async def _resolve_model_id_from_api(base_url: str, timeout: float = 5.0) -> str | None:
+    """Fetch first model id from OpenAI-compatible GET /v1/models. Cached per base_url."""
+    if not base_url:
+        return None
+    key = base_url.rstrip("/")
+    if key in _v1_models_id_cache:
+        return _v1_models_id_cache[key]
+    try:
+        url = f"{key}/v1/models" if "/v1" not in key else f"{key}/models"
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            r = await client.get(url)
+            r.raise_for_status()
+            data = r.json()
+        models = data.get("data") if isinstance(data, dict) else None
+        if isinstance(models, list) and models:
+            model_id = models[0].get("id") if isinstance(models[0], dict) else None
+            if model_id:
+                _v1_models_id_cache[key] = model_id
+                return model_id
+    except Exception as e:
+        logger.debug("CUA could not resolve model id from %s/v1/models: %s", base_url, e)
+    return None
 
 
 def _make_env_with_task(task_id: str) -> Any:
@@ -111,11 +141,19 @@ class CUAAgentWorkflow(RolloutWorkflow):
         gbox_mini_agent_env: dict[str, Any] | None,
         model_base_url: str,
         model_name: str,
+        resolved_inference_url: str | None = None,
         max_turns: int = 30,
         max_task_time_seconds: int | None = None,
         max_turn_time_seconds: int | None = None,
         standard_action_space: str | None = "mobile",
         rollout_recorder: Any = None,
+        rollout_recorder_factory: Any = None,
+        monitor_ingest_config: dict[str, Any] | None = None,
+        step_id: int | None = None,
+        global_step: int | None = None,
+        experiment_name: str | None = None,
+        trial_name: str | None = None,
+        gym_task_list: list[dict] | None = None,
     ):
         self.tokenizer = tokenizer
         self.gbox_mini_agent_base_url = gbox_mini_agent_base_url
@@ -123,11 +161,39 @@ class CUAAgentWorkflow(RolloutWorkflow):
         self.gbox_mini_agent_env = gbox_mini_agent_env
         self.model_base_url = model_base_url
         self.model_name = model_name
+        self.resolved_inference_url = resolved_inference_url
+        self.experiment_name = experiment_name
+        self.trial_name = trial_name
         self.max_turns = max_turns
         self.max_task_time_seconds = max_task_time_seconds
         self.max_turn_time_seconds = max_turn_time_seconds
         self.standard_action_space = standard_action_space
         self.rollout_recorder = rollout_recorder
+        self.rollout_recorder_factory = rollout_recorder_factory
+        self.monitor_ingest_config = monitor_ingest_config or {}
+        self.step_id = step_id
+        self.global_step = global_step
+        self.gym_task_list = gym_task_list
+
+    def _resolve_model_base_url(self) -> str:
+        """Return model base URL. Prefer resolved_inference_url (set on main process) so workers get correct vLLM URL; else name_resolve when experiment/trial set; else model_base_url."""
+        if getattr(self, "resolved_inference_url", None):
+            return self.resolved_inference_url.rstrip("/")
+        if self.experiment_name and self.trial_name:
+            try:
+                name = names.gen_servers(self.experiment_name, self.trial_name)
+                addrs = name_resolve.get_subtree(name)
+                if addrs:
+                    addr = addrs[0]
+                    base = f"http://{addr}".rstrip("/")
+                    url = f"{base}/v1" if "/v1" not in base else base
+                    logger.debug("CUA resolved AReaL vLLM base URL: %s", url)
+                    return url
+            except Exception as e:
+                logger.warning("CUA could not resolve AReaL vLLM URL from name_resolve: %s", e)
+        if self.model_base_url:
+            return self.model_base_url.rstrip("/")
+        return ""
 
     async def arun_episode(
         self, engine: InferenceEngine, data: dict[str, Any]
@@ -145,30 +211,82 @@ class CUAAgentWorkflow(RolloutWorkflow):
         env = _make_env_with_task(task_id)
         rollout_id = uuid.uuid4().hex
         rollout_logger = RolloutLogger(rollout_id)
+        rollout_recorder = self.rollout_recorder
+        if self.rollout_recorder_factory is not None:
+            rollout_recorder = self.rollout_recorder_factory(rollout_id)
+        elif self.monitor_ingest_config.get("base_url") and self.monitor_ingest_config.get("project_token"):
+            try:
+                from cua_rl.database.ingest_client import IngestClient
+                from cua_rl.database.http_rollout_recorder import HttpRolloutRecorder
+                resolved_inference_url = self._resolve_model_base_url()
+                model_path_for_monitor = self.model_name or resolved_inference_url or self.model_base_url or ""
+                base_url = self.monitor_ingest_config["base_url"]
+                project_token = self.monitor_ingest_config["project_token"]
+                training_id = self.monitor_ingest_config.get("training_id")
+                ingest_client = IngestClient(base_url, project_token)
+                rollout_recorder = HttpRolloutRecorder(
+                    ingest_client,
+                    rollout_id,
+                    training_id,
+                    "step",  # Monitor only accepts baseline/eval/step
+                    model_path=model_path_for_monitor,
+                    step_id=self.step_id,
+                    eval_id=None,
+                    baseline_id=None,
+                )
+            except Exception as e:
+                logger.warning("CUA monitor rollout recorder on worker failed: %s", e)
+                rollout_recorder = None
 
         try:
             ctx = await start_genv_execution(
                 env=env,
                 gym_base_url=gym_base_url,
                 gym_id=gym_id,
+                preloaded_tasks=getattr(self, "gym_task_list", None),
             )
         except Exception as e:
             logger.warning("CUA start_genv_execution failed: %s", e)
             return None
 
         gbox_env = ctx.agent_env_payload()
+        resolved_base_url = self._resolve_model_base_url()
         model_payload: dict[str, Any] = {}
-        if self.model_base_url:
-            model_payload["baseUrl"] = self.model_base_url
-        if self.model_name:
-            model_payload["name"] = self.model_name
+        # Always send baseUrl when we have one so gbox-mini-agent uses AReaL vLLM, not (default)
+        base_url = resolved_base_url or (self.model_base_url.rstrip("/") if self.model_base_url else "")
+        if base_url:
+            model_payload["baseUrl"] = base_url
+        # Use model id from vLLM GET /v1/models so request matches server (avoids "invalid model ID")
+        model_name_for_payload = self.model_name
+        if base_url:
+            resolved_id = await _resolve_model_id_from_api(base_url)
+            if resolved_id:
+                model_name_for_payload = resolved_id
+        if model_name_for_payload:
+            model_payload["name"] = model_name_for_payload
         model_payload["provider"] = "openai"
+
+        if rollout_recorder is not None:
+            resolved_base_url = self._resolve_model_base_url()
+            model_path_str = self.model_name or resolved_base_url or self.model_base_url or ""
+            if not rollout_recorder.start_rollout(
+                task_id_str=task_id,
+                task_description=description or name,
+                model_path=model_path_str,
+                env_type="genv",
+                source_type="step",  # Monitor only accepts baseline/eval/step for rollout filter
+                step_id=rollout_recorder.step_id,
+                eval_id=rollout_recorder.eval_id,
+                baseline_id=rollout_recorder.baseline_id,
+                max_turns=self.max_turns,
+            ):
+                logger.warning("CUA rollout_recorder.start_rollout failed, continuing without monitor")
 
         try:
             run_result = await run_mini_agent_rollout(
                 task=description,
                 rollout_logger=rollout_logger,
-                rollout_recorder=self.rollout_recorder,
+                rollout_recorder=rollout_recorder,
                 max_turns=self.max_turns,
                 gbox_mini_agent_base_url=self.gbox_mini_agent_base_url,
                 gbox_mini_agent_agent=self.gbox_mini_agent_agent,

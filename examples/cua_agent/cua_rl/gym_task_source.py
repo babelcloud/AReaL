@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import os
 import random
+import re
 from typing import Any, Optional
 
 from cua_rl.core.genv_http_client import GenvHttpClient
@@ -156,6 +157,53 @@ def _iter_split(
     return shuffled[cut:]
 
 
+def _parse_number_range(s: str) -> tuple[int, int] | None:
+    """Parse "001-032" or "1-32" to (1, 32) inclusive. Returns None if invalid."""
+    if not s or not isinstance(s, str):
+        return None
+    m = re.match(r"^\s*(\d+)\s*-\s*(\d+)\s*$", s.strip())
+    if not m:
+        return None
+    low, high = int(m.group(1)), int(m.group(2))
+    if low > high:
+        low, high = high, low
+    return (low, high)
+
+
+def _partition_by_number_range(
+    task_map: dict[str, dict],
+    eval_number_range: str,
+) -> tuple[list[str], list[str]]:
+    """Split identifiers into (eval_identifiers, train_identifiers) by task number range.
+    eval_number_range e.g. "001-032" -> eval = numbers in [1,32], train = rest.
+    """
+    r = _parse_number_range(eval_number_range)
+    if r is None:
+        return [], list(task_map.keys())
+    low, high = r
+    eval_ids: list[str] = []
+    train_ids: list[str] = []
+    for identifier, task in task_map.items():
+        num_str = _get_task_number(task, identifier=identifier)
+        if num_str is None:
+            train_ids.append(identifier)
+            continue
+        digits = _extract_digits(num_str)
+        if not digits:
+            train_ids.append(identifier)
+            continue
+        try:
+            n = int(digits.lstrip("0") or "0")
+        except ValueError:
+            train_ids.append(identifier)
+            continue
+        if low <= n <= high:
+            eval_ids.append(identifier)
+        else:
+            train_ids.append(identifier)
+    return eval_ids, train_ids
+
+
 def load_genv_tasks(
     *,
     gym_base_url: str | None = None,
@@ -165,6 +213,7 @@ def load_genv_tasks(
     split_type: Optional[str] = None,
     task_names: Optional[str] = None,
     limit: Optional[int] = None,
+    eval_number_range: Optional[str] = None,
 ) -> list[CUATask]:
     """
     Load tasks from the Gym server.
@@ -180,12 +229,27 @@ def load_genv_tasks(
             task_map[identifier] = task
 
     all_identifiers = list(task_map.keys())
-    chosen_identifiers = _iter_split(
-        all_identifiers,
-        seed=seed,
-        train_ratio=train_ratio,
-        split_type=split_type,
-    )
+    if eval_number_range and eval_number_range.strip():
+        eval_ids, train_ids = _partition_by_number_range(task_map, eval_number_range.strip())
+        if split_type and split_type.strip().lower() == "eval":
+            chosen_identifiers = sorted(eval_ids)
+        else:
+            chosen_identifiers = sorted(train_ids)
+        logger.info(
+            "[gym] split by eval_number_range=%r: eval=%d, train=%d; using %s (%d)",
+            eval_number_range,
+            len(eval_ids),
+            len(train_ids),
+            split_type or "train",
+            len(chosen_identifiers),
+        )
+    else:
+        chosen_identifiers = _iter_split(
+            all_identifiers,
+            seed=seed,
+            train_ratio=train_ratio,
+            split_type=split_type,
+        )
     if not gym_tasks:
         logger.warning(
             "[gym] No tasks returned from gym_id=%s (base_url=%s)",

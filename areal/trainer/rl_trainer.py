@@ -238,6 +238,13 @@ class PPOTrainer:
             epoch = global_step // steps_per_epoch
             step = global_step % steps_per_epoch
 
+            step_id = None
+            if getattr(self, "on_before_step", None) is not None:
+                step_id = self.on_before_step(global_step)
+            if workflow_kwargs is not None:
+                workflow_kwargs["step_id"] = step_id
+                workflow_kwargs["global_step"] = global_step
+
             with (
                 stats_tracker.record_timing("rollout"),
                 perf_tracer.trace_scope(

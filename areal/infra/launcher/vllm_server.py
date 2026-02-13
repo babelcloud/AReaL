@@ -182,6 +182,12 @@ class vLLMServerWrapper:
                     visible[j * gpus_per_server : (j + 1) * gpus_per_server]
                 ),
             }
+            # LMCache Redis KV cache: set env so vLLM/LMCache use external Redis
+            if getattr(self.config, "kv_offloading_backend", None) == "lmcache" and getattr(self.config, "lmcache_remote_url", None):
+                custom_env["LMCACHE_USE_EXPERIMENTAL"] = "True"
+                custom_env["LMCACHE_REMOTE_URL"] = self.config.lmcache_remote_url
+                custom_env["LMCACHE_CHUNK_SIZE"] = "256"
+                custom_env["LMCACHE_REMOTE_SERDE"] = "naive"
             config = deepcopy(self.config)
             config.seed = base_random_seed + server_local_idx
             cmd = vLLMConfig.build_cmd(

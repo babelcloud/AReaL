@@ -76,14 +76,18 @@ class IngestClient:
         return self.id_map.get(kind, {}).get(str(local_id))
 
     def _update_map(self, kind: str, items: list[dict[str, Any]]) -> None:
+        # Training Monitor ingest API returns [{ client_id, id }] per type (see batch/route.ts insertMany).
         mapping = self.id_map.setdefault(kind, {})
         for item in items:
             try:
-                local_id = str(item["client_id"])
-                remote_id = int(item["id"])
-            except Exception:
+                local_id = str(item.get("client_id", ""))
+                if not local_id:
+                    continue
+                remote_id = item.get("id")
+                if remote_id is not None:
+                    mapping[local_id] = int(remote_id)
+            except (TypeError, ValueError, KeyError):
                 continue
-            mapping[local_id] = remote_id
 
     def _post_batch(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         url = f"{self.base_url}/api/ingest/batch"
@@ -175,9 +179,11 @@ class IngestClient:
         self._update_map(kind, response.get(response_key, []))
         mapped = self._map_id(kind, client_id)
         if mapped is None:
+            raw_list = response.get(response_key, [])
             logger.warning(
                 f"[IngestClient] Missing {kind} mapping after ingest. "
-                f"response_key={response_key}, payload={_sanitize_payload_for_log(payload)}"
+                f"response_key={response_key}, payload={_sanitize_payload_for_log(payload)}, "
+                f"response_{response_key}={_sanitize_payload_for_log(raw_list[:3]) if raw_list else raw_list}"
             )
         return mapped
 

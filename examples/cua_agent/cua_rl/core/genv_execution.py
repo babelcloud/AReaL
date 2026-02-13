@@ -245,6 +245,7 @@ async def start_genv_execution(
     gym_id: str,
     create_gym_payload: dict | None = None,
     rollout_logger = None,
+    preloaded_tasks: list[dict] | None = None,
 ) -> GenvExecutionContext:
     gym_base_url = _normalize_base_url(gym_base_url)
     start_time = time.time()
@@ -254,7 +255,10 @@ async def start_genv_execution(
             response = await client.post("/api/v1/gyms", json=create_gym_payload)
             response.raise_for_status()
 
-    tasks = await list_tasks(gym_base_url, gym_id)
+    if preloaded_tasks is not None and len(preloaded_tasks) > 0:
+        tasks = preloaded_tasks
+    else:
+        tasks = await list_tasks(gym_base_url, gym_id)
     task_hint = _extract_task_identifier(env)
     task_identifier = _pick_task_identifier(task_hint, tasks)
     if not task_identifier:

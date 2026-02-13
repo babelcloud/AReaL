@@ -33,9 +33,9 @@ class GenvHttpClient:
         self.client = httpx.Client(
             base_url=self.base_url,
             timeout=httpx.Timeout(
-                connect=10.0,
-                read=600.0,
-                write=30.0,
+                connect=60.0,
+                read=60.0,
+                write=60.0,
                 pool=30.0,
             ),
             limits=httpx.Limits(
@@ -143,9 +143,9 @@ class AsyncGenvHttpClient:
         self.client = httpx.AsyncClient(
             base_url=self.base_url,
             timeout=httpx.Timeout(
-                connect=10.0,
-                read=600.0,
-                write=30.0,
+                connect=60.0,
+                read=60.0,
+                write=60.0,
                 pool=30.0,
             ),
             limits=httpx.Limits(

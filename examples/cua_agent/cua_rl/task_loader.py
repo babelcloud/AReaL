@@ -31,6 +31,9 @@ class TaskSourceConfig:
     # Limit number of tasks (optional sampling).
     limit: Optional[int] = None
 
+    # Eval by task number range (e.g. "001-032" -> eval=001..032, train=rest). Overrides train_ratio split.
+    eval_number_range: Optional[str] = None
+
     # Random seed for sampling and splitting.
     seed: Optional[int] = 42
 
@@ -50,6 +53,7 @@ def load_tasks_from_config(config: TaskSourceConfig) -> List[CUATask]:
         split_type=config.split_type,
         task_names=config.task_names,
         limit=config.limit,
+        eval_number_range=config.eval_number_range,
     )
     logger.info(
         "Loaded %d tasks from source_type='gym' (base_url=%s, split=%s, limit=%s)",

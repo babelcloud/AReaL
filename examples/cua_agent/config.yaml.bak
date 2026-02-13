@@ -20,8 +20,6 @@ gym_id: ""  # set via override or env
 gym_train_ratio: 0.8
 gym_split_type: train
 gym_limit: null
-# umetrip: 001-032 = eval, rest = train
-gym_eval_number_range: "001-032"
 gym_seed: 42
 
 gbox_mini_agent_base_url: http://127.0.0.1:3100
@@ -73,8 +71,8 @@ vllm:
   kv_offloading_size: 20
   kv_offloading_backend: "lmcache"
   lmcache_remote_url: "redis://localhost:6379"  # set to your Redis URL (e.g. redis://host:6379)
-  # Single-GPU colocation: vLLM+actor+ref share one card (~50+67+17 GiB); 0.22 keeps vLLM ~31GiB so total fits in 140GiB.
-  gpu_memory_utilization: 0.22
+  # Single-GPU colocation: leave room for actor/ref (free was ~54GiB of 140GiB).
+  gpu_memory_utilization: 0.35
 
 actor:
   experiment_name: ${experiment_name}
@@ -91,7 +89,7 @@ actor:
   adv_norm:
     mean_level: batch
     std_level: batch
-# Single-GPU: colocation puts actor (and ref) on same GPU as vLLM. For 2 GPUs set type: separation and n_gpus_per_node: 2, actor scheduling_spec with gpu: 1.
+# Single-GPU: reuse rollout workers so vLLM and actor share the same card.
   scheduling_strategy:
     type: colocation
     target: rollout

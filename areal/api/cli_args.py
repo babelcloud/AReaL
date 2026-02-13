@@ -1153,6 +1153,13 @@ class vLLMConfig:
     uvicorn_log_level: str = "warning"
     enable_lora: bool = False
     lora_modules: str = ""
+    # CUA/VLM: 256k context, 64 images, fetch images from URLs (e.g. TOS screenshot host)
+    limit_mm_per_prompt: str | None = None  # JSON e.g. "{\"image\": 64}"
+    allowed_media_domains: str | None = None  # Comma-separated domains e.g. screenshots.tos-cn-guangzhou.volces.com
+    # KV cache offload to Redis via LMCache (set kv_offloading_size and lmcache_remote_url)
+    kv_offloading_size: float | None = None  # GiB to offload (activates offload when set)
+    kv_offloading_backend: str = "native"  # "native" | "lmcache" for Redis
+    lmcache_remote_url: str | None = None  # e.g. redis://host:6379 for LMCache Redis backend
 
     @staticmethod
     def build_args(
@@ -1177,6 +1184,11 @@ class vLLMConfig:
             args["port"] = port
         if host is not None:
             args["host"] = host
+        # lmcache_remote_url is passed via env in launcher, not as CLI arg
+        args.pop("lmcache_remote_url", None)
+        # LMCacheConnectorV1 does not support HMA; vLLM requires --disable-hybrid-kv-cache-manager when using lmcache
+        if args.get("kv_offloading_backend") == "lmcache":
+            args["disable_hybrid_kv_cache_manager"] = True
         # handle lora modules separately
         lm = args.get("lora_modules")
         if lm:

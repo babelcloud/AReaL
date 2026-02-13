@@ -247,6 +247,10 @@ class VLLMBackend:
         if vllm_cache_path:
             _env["VLLM_CACHE_ROOT"] = os.path.join(vllm_cache_path, str(uuid.uuid4()))
 
+        # Ensure vLLM subprocess can see GPU when parent has CUDA_VISIBLE_DEVICES unset/empty
+        if not (_env.get("CUDA_VISIBLE_DEVICES") or not _env.get("CUDA_VISIBLE_DEVICES").strip()):
+            _env["CUDA_VISIBLE_DEVICES"] = "0"
+
         return subprocess.Popen(
             cmd,
             env=_env,

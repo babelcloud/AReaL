@@ -47,6 +47,7 @@ class CUAConfig(PPOConfig):
         metadata={"help": "Split: 'train' | 'eval' | None (all)."},
     )
     gym_limit: int | None = field(default=None, metadata={"help": "Limit number of tasks."})
+    gym_eval_number_range: str | None = field(default=None, metadata={"help": "Eval set by task number range, e.g. 001-032; rest = train. Overrides train_ratio."})
     gym_seed: int = field(default=42, metadata={"help": "Seed for task sampling/split."})
 
     # gbox-mini-agent

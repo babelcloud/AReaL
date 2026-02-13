@@ -160,7 +160,8 @@ while [[ $# -gt 0 ]]; do
             echo "  (Or set MONITOR_BASE_URL, PROJECT_ID, PROJECT_TOKEN in env or .env)"
             echo ""
             echo "Training:"
-            echo "  --max-concurrent-rollouts N  Max concurrent rollouts (default: 8)"
+            echo "  --max-concurrent-rollouts N  Max concurrent rollouts (default: 8). Limits"
+            echo "                                simultaneous gbox/gym executions; keep ≤8 for gbox."
             echo "  --batch-size N               Consumer batch size (default: 4)"
             echo "  --max-turns N                Max turns per task (default: 30)"
             echo "  --max-task-time SECS         Max run time per task in seconds (default: 600)"
@@ -182,6 +183,7 @@ done
 
 # Hydra overrides (key=value)
 OVERRIDES=()
+OVERRIDES+=( "+scheduler.type=local" )
 
 if [ -n "$GYM_BASE_URL" ]; then
     OVERRIDES+=( "gym_base_url=$GYM_BASE_URL" )
@@ -218,6 +220,11 @@ if [ -n "$PROJECT_TOKEN" ]; then
 fi
 if [ -n "$GYM_LIMIT" ]; then
     OVERRIDES+=( "gym_limit=$GYM_LIMIT" )
+fi
+
+# Warn if gbox concurrency may be too high (gbox typically supports up to ~8 concurrent rollouts)
+if [ -n "$MAX_CONCURRENT_ROLLOUTS" ] && [ "$MAX_CONCURRENT_ROLLOUTS" -gt 8 ] 2>/dev/null; then
+    echo "Warning: max_concurrent_rollouts=$MAX_CONCURRENT_ROLLOUTS may exceed gbox capacity. Consider --max-concurrent-rollouts 8 or lower." >&2
 fi
 
 export PYTHONPATH="$SCRIPT_DIR:${PYTHONPATH:-}"

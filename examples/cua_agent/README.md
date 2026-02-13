@@ -9,19 +9,19 @@ CUA (Computer Use Agent) training on AReaL: one episode = **genv** execution + *
 ## Prerequisites
 
 - **gym server** and **gbox-mini-agent** running.
-- **vLLM** (or OpenAI-compatible proxy) for inference; set `model_base_url` / `MODEL_BASE_URL` so gbox uses it.
+- **vLLM** (or OpenAI-compatible proxy) for inference. When using **AReaL-managed vLLM**, leave `model_base_url` empty: the workflow resolves the inference URL from name_resolve (vLLM listens on **ports 10000–50000**, not 8000). For an external proxy, set `model_base_url` / `MODEL_BASE_URL` to a URL reachable from the Genv execution environment where gbox-mini-agent runs.
 - Python deps: `httpx`, `datasets` (AReaL env or install separately for `cua_rl`).
 
 ## Config
 
 - `config.yaml`: experiment, gym, gbox, rollout, actor, dataset placeholders.
-- Override: `gym_id=your_gym`, `model_base_url=http://vllm:8000/v1`, `rollout.max_concurrent_rollouts=8`.
+- Override: `gym_id=your_gym`, `rollout.max_concurrent_rollouts=8`. For external proxy: `model_base_url=http://<host>:<port>/v1` (AReaL vLLM uses 10000–50000).
 
 ## Run
 
 ### Using `train.sh` (recommended)
 
-From AReaL repo root. Script accepts CLI args and passes them as Hydra overrides; optional `.env` in `examples/cua_agent/` or repo root is loaded.
+From AReaL repo root. Script accepts CLI args and passes them as Hydra overrides; optional `.env` in `examples/cua_agent/` or repo root is loaded. When using **AReaL-managed vLLM**, omit `--model-base-url` so the workflow auto-resolves the inference URL.
 
 ```bash
 cd /path/to/AReaL
