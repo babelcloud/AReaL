@@ -628,14 +628,14 @@ async def run_mini_agent_rollout(
                             if isinstance(fetched_step, dict) and rollout_recorder is not None:
                                 step_turn = step_index + 1  # 1-based turn_num
                                 if step_turn not in steps_recorded_turns:
-                                    # Record model_input first (if we have it from model_call event)
-                                    if step_turn in turn_model_input:
-                                        model_input = turn_model_input[step_turn]
-                                        _, readable_messages = _extract_model_input_screenshot(model_input, turn=step_turn)
+                                    # Record model_input from step messages (mini-agent stores TOS URLs, not base64)
+                                    step_messages = fetched_step.get("messages") if isinstance(fetched_step.get("messages"), list) else None
+                                    if step_messages:
+                                        model_input_payload = {"messages": step_messages, "meta": {"turn": step_turn}}
                                         obs_id = rollout_recorder.record_observation(
                                             turn_num=step_turn,
                                             obs_type="model_input",
-                                            model_input=_sanitize_json_payload(readable_messages or model_input),
+                                            model_input=_sanitize_json_payload(model_input_payload),
                                         )
                                         if obs_id is not None:
                                             rollout_logger.log(f"[DEBUG] Recorded model_input for turn {step_turn}, obs_id={obs_id}")
@@ -696,23 +696,7 @@ async def run_mini_agent_rollout(
                                 # Fall back to event-captured data if step payload is missing.
                                 step_turn = step_index + 1
                                 if step_turn not in steps_recorded_turns:
-                                    if step_turn in turn_model_input:
-                                        model_input = turn_model_input[step_turn]
-                                        _, readable_messages = _extract_model_input_screenshot(model_input, turn=step_turn)
-                                        obs_id = rollout_recorder.record_observation(
-                                            turn_num=step_turn,
-                                            obs_type="model_input",
-                                            model_input=_sanitize_json_payload(readable_messages or model_input),
-                                        )
-                                        if obs_id is not None:
-                                            rollout_logger.log(
-                                                f"[DEBUG] Recorded model_input for turn {step_turn} (event fallback), obs_id={obs_id}"
-                                            )
-                                        else:
-                                            rollout_logger.log(
-                                                f"[WARNING] Failed to record model_input for turn {step_turn} (event fallback)",
-                                                color="YELLOW",
-                                            )
+                                    # Skip model_input - no step data, event may have base64
                                     actions_ok = True
                                     for action_payload in turn_actions.get(step_turn, []):
                                         call_id = action_payload.get("callId")
@@ -893,14 +877,14 @@ async def run_mini_agent_rollout(
                         continue
                     step_texts[turn] = step.get("text") or ""
                     
-                    # Record model_input if we haven't recorded it yet
-                    if turn in turn_model_input:
-                        model_input = turn_model_input[turn]
-                        _, readable_messages = _extract_model_input_screenshot(model_input, turn=turn)
+                    # Record model_input from step messages (mini-agent stores TOS URLs, not base64)
+                    step_messages = step.get("messages") if isinstance(step.get("messages"), list) else None
+                    if step_messages:
+                        model_input_payload = {"messages": step_messages, "meta": {"turn": turn}}
                         obs_id = rollout_recorder.record_observation(
                             turn_num=turn,
                             obs_type="model_input",
-                            model_input=_sanitize_json_payload(readable_messages or model_input),
+                            model_input=_sanitize_json_payload(model_input_payload),
                         )
                         if obs_id is not None:
                             rollout_logger.log(f"[DEBUG] Recorded model_input for turn {turn} (post-run), obs_id={obs_id}")

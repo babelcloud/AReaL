@@ -834,11 +834,16 @@ class RolloutController:
     async def update_weights_from_distributed(
         self, meta: WeightUpdateMeta, param_specs: list[ParamSpec]
     ):
+        logger.info(
+            "vLLM reload weights: pushing from trainer (distributed, %d param specs)",
+            len(param_specs) if param_specs is not None else 0,
+        )
         await self._collective_rpc_async(
             "update_weights_from_distributed", meta=meta, param_specs=param_specs
         )
 
     async def update_weights_from_disk(self, meta: WeightUpdateMeta):
+        logger.info("vLLM reload weights: loading from disk path=%s", getattr(meta, "path", "?"))
         meta.clear_checkpoint_after_load = False
         await self._collective_rpc_async("update_weights_from_disk", meta=meta)
         shutil.rmtree(meta.path, ignore_errors=True)

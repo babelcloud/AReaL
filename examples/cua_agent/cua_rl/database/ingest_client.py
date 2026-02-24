@@ -166,9 +166,16 @@ class IngestClient:
 
     def post_training(self, data: Dict[str, Any]) -> Optional[int]:
         """Post a training payload directly without local DB objects."""
+        url = f"{self.base_url}/api/ingest/batch"
+        logger.info("Training Monitor ingest: POST %s", url)
         payload = {"training": data}
         response = self._post_batch(payload)
         training_id = response.get("training_id")
+        if training_id is None:
+            logger.warning(
+                "Training Monitor ingest: response has no training_id; keys=%s",
+                list(response.keys()) if isinstance(response, dict) else type(response).__name__,
+            )
         return int(training_id) if training_id is not None else None
 
     def _post_single_with_map(

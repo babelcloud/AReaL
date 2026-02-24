@@ -187,7 +187,7 @@ class CUAAgentWorkflow(RolloutWorkflow):
                     addr = addrs[0]
                     base = f"http://{addr}".rstrip("/")
                     url = f"{base}/v1" if "/v1" not in base else base
-                    logger.debug("CUA resolved AReaL vLLM base URL: %s", url)
+                    logger.info("CUA resolved AReaL vLLM base URL (for mini-agent): %s", url)
                     return url
             except Exception as e:
                 logger.warning("CUA could not resolve AReaL vLLM URL from name_resolve: %s", e)

@@ -13,6 +13,8 @@ import logging
 import os
 import pathlib
 import sys
+import urllib.error
+from datetime import datetime
 
 # Add examples/cua_agent so that "cua_rl" and "examples.cua_agent" resolve
 _SCRIPT_DIR = pathlib.Path(__file__).resolve().parent
@@ -23,11 +25,12 @@ from configs import CUAConfig  # noqa: E402
 
 from areal import PPOTrainer  # noqa: E402
 from areal.api.cli_args import load_expr_config  # noqa: E402
+from areal.utils import logging as areal_logging  # noqa: E402
 from areal.utils.hf_utils import load_hf_tokenizer  # noqa: E402
 
 from dataset import get_cua_train_and_valid_datasets  # noqa: E402
 
-logger = logging.getLogger(__name__)
+logger = areal_logging.getLogger("CUAAgent", type_="colored")
 
 
 def main(args: list[str] | None = None) -> None:
@@ -40,6 +43,11 @@ def main(args: list[str] | None = None) -> None:
     project_token = config.project_token or os.environ.get("MONITOR_PROJECT_TOKEN", "")
     training_id = None
     if monitor_base_url and project_token:
+        ingest_url = f"{monitor_base_url.rstrip('/')}/api/ingest/batch"
+        logger.info(
+            "Training Monitor: enabled, ingest URL=%s (if Monitor UI is under a path like /178, set monitor_base_url to include it, e.g. http://host/178)",
+            ingest_url,
+        )
         try:
             from cua_rl.database.ingest_client import IngestClient
             from cua_rl.database.monitor_context import set_ingest_client, set_training_id
@@ -48,8 +56,9 @@ def main(args: list[str] | None = None) -> None:
             set_ingest_client(ingest)
             exp = getattr(config, "experiment_name", "cua_agent")
             trial = getattr(config, "trial_name", "run")
+            run_name = f"{exp}_{trial}_{datetime.now().strftime('%Y%m%d-%H%M%S')}"
             training_id = ingest.post_training({
-                "run_name": f"{exp}_{trial}",
+                "run_name": run_name,
                 "status": "running",
                 "current_phase": "rollout",
                 "experiment_name": exp,
@@ -57,9 +66,20 @@ def main(args: list[str] | None = None) -> None:
             })
             if training_id is not None:
                 set_training_id(training_id)
-                logger.info("Training Monitor: training_id=%s", training_id)
+                logger.info("Training Monitor: training created, training_id=%s", training_id)
+            else:
+                logger.warning(
+                    "Training Monitor: post_training returned no training_id; check ingest API response and base_url (e.g. use http://host/178 if UI is at .../178/...)"
+                )
         except Exception as e:
-            logger.warning("Training Monitor init failed: %s", e)
+            err_detail = str(e)
+            if isinstance(e, urllib.error.HTTPError):
+                try:
+                    body = e.read().decode("utf-8", errors="replace")[:500]
+                except Exception:
+                    body = "<unreadable>"
+                err_detail = f"HTTP {e.code}: {body}"
+            logger.warning("Training Monitor init failed: %s", err_detail)
 
     # Dataset from gym tasks (no HF path)
     train_dataset, valid_dataset = get_cua_train_and_valid_datasets(
@@ -69,6 +89,12 @@ def main(args: list[str] | None = None) -> None:
         limit=config.gym_limit,
         seed=config.gym_seed,
         eval_number_range=getattr(config, "gym_eval_number_range", None),
+    )
+    n_train, n_valid = len(train_dataset), len(valid_dataset)
+    train_ids = [train_dataset[i].get("task_id") or train_dataset[i].get("id") for i in range(min(5, n_train))]
+    logger.info(
+        "Load tasks: train=%d, valid=%d (train task_ids sample: %s)",
+        n_train, n_valid, train_ids if train_ids else "[]",
     )
 
     # Load full gym task list once so rollout uses in-memory list instead of calling list_tasks every time
@@ -103,7 +129,10 @@ def main(args: list[str] | None = None) -> None:
                                 "source_type": "gym",
                             }
                             ingest_for_tasks.post_task(payload, str(tid))
-                logger.info("Training Monitor: posted %d tasks for Load tasks", len(seen))
+                logger.info(
+                    "Load tasks (Monitor): posted %d unique tasks for Load tasks panel",
+                    len(seen),
+                )
         except Exception as e:
             logger.warning("Training Monitor post tasks failed: %s", e)
 
@@ -157,6 +186,14 @@ def main(args: list[str] | None = None) -> None:
             logger.warning("Training Monitor ingest config failed: %s", e)
 
     eval_workflow_kwargs = workflow_kwargs.copy()
+
+    total_epochs = getattr(config, "total_train_epochs", None)
+    batch_size = getattr(getattr(config, "train_dataset", None), "batch_size", None)
+    group_size = getattr(getattr(config, "gconfig", None), "n_samples", None)
+    logger.info(
+        "Training plan: total_epochs=%s, batch_size=%s, group_size=%s (steps_per_epoch = train_size // batch_size)",
+        total_epochs, batch_size, group_size,
+    )
 
     with PPOTrainer(
         config,

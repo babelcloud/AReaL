@@ -37,6 +37,7 @@ from areal.infra import (
     current_platform,
 )
 from areal.utils import logging, perf_tracer, seeding, stats_tracker
+from areal.utils.data import get_batch_size
 from areal.utils.dataloader import create_dataloader
 from areal.utils.environ import is_single_controller
 from areal.utils.evaluator import Evaluator
@@ -224,6 +225,11 @@ class PPOTrainer:
             raise ValueError(f"Total epochs must be positive: {total_epochs}")
         steps_per_epoch = len(self.train_dataloader)
         max_steps = total_epochs * steps_per_epoch
+        if self.actor.is_data_parallel_head():
+            logger.info(
+                "Training started: max_steps=%d, steps_per_epoch=%d, total_epochs=%d",
+                max_steps, steps_per_epoch, total_epochs,
+            )
 
         # Initialize proxy workers if not using RolloutWorkflow
         if self._requires_proxy_workflow(workflow):
@@ -245,6 +251,12 @@ class PPOTrainer:
                 workflow_kwargs["step_id"] = step_id
                 workflow_kwargs["global_step"] = global_step
 
+            if self.actor.is_data_parallel_head():
+                logger.info(
+                    "[Step %d/%d] Epoch %d/%d | phase: rollout",
+                    global_step + 1, max_steps, epoch + 1, total_epochs,
+                )
+
             with (
                 stats_tracker.record_timing("rollout"),
                 perf_tracer.trace_scope(
@@ -264,6 +276,14 @@ class PPOTrainer:
                     group_size=config.gconfig.n_samples,
                     dynamic_bs=self.config.dynamic_bs,
                 )
+                if self.actor.is_data_parallel_head():
+                    bs = get_batch_size(rollout_batch)
+                    gs = config.gconfig.n_samples
+                    n_groups = (bs // gs) if gs and bs else 0
+                    logger.info(
+                        "  Rollout: batch_size=%d, group_size=%d, groups=%d",
+                        bs, gs, n_groups,
+                    )
 
             if self.critic is not None:
                 with (
@@ -338,6 +358,8 @@ class PPOTrainer:
                     self.critic.get_device_stats().log("ppo critic update")
 
             # pause inference for updating weights, save, and evaluation
+            if self.actor.is_data_parallel_head():
+                logger.info("  Pausing rollout for weights update and eval.")
             self.rollout.pause()
 
             with (
@@ -355,6 +377,11 @@ class PPOTrainer:
                     self.critic.set_version(global_step + 1)
                 self.rollout.set_version(global_step + 1)
                 self.eval_rollout.set_version(global_step + 1)
+                if self.actor.is_data_parallel_head():
+                    logger.info(
+                        "  Weights: pushed to vLLM; vLLM reload weights (version=%d)",
+                        global_step + 1,
+                    )
 
             with (
                 stats_tracker.record_timing("save"),
@@ -365,6 +392,8 @@ class PPOTrainer:
                 ),
             ):
                 self._save_hf(epoch=epoch, epoch_step=step, global_step=global_step)
+            if self.actor.is_data_parallel_head():
+                logger.info("  Checkpoint: saved step %d", global_step)
 
             with (
                 stats_tracker.record_timing("checkpoint_for_recover"),
@@ -386,6 +415,15 @@ class PPOTrainer:
                     args={"global_step": global_step},
                 ),
             ):
+                if (
+                    self.actor.is_data_parallel_head()
+                    and self.valid_dataloader is not None
+                    and eval_workflow is not None
+                ):
+                    logger.info(
+                        "  Eval: running on valid set (%d samples)",
+                        len(self.valid_dataset),
+                    )
                 self._evaluate(
                     eval_workflow=eval_workflow,
                     eval_workflow_kwargs=eval_workflow_kwargs,
@@ -417,8 +455,16 @@ class PPOTrainer:
 
             # Resume rollout
             self.rollout.resume()
+            if self.actor.is_data_parallel_head():
+                logger.info("  Rollout resumed.")
 
             self._save_perf_tracer(step=global_step)
+
+        if self.actor.is_data_parallel_head():
+            logger.info(
+                "Training finished: %d steps completed.",
+                global_step + 1,
+            )
 
     def close(self):
         self.stats_logger.close()

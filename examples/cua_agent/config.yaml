@@ -1,89 +1,77 @@
-# CUA Agent PPO training (genv + gbox-mini-agent).
-# Tasks are loaded from gym (gym_base_url, gym_id); dataset path is ignored.
-# Inference URL for gbox: set model_base_url/MODEL_BASE_URL or leave empty to use AReaL vLLM (ports 10000-50000, resolved from name_resolve).
-
 experiment_name: cua-agent
 trial_name: run0
-
 seed: 42
 tokenizer_path: ${actor.path}
-
 workflow: cua_workflow.CUAAgentWorkflow
 eval_workflow: ${workflow}
-
 max_turns: 30
 max_task_time_seconds: 600
 max_turn_time_seconds: 120
-
 gym_base_url: http://20.57.165.105:5010
-gym_id: ""  # set via override or env
+gym_id: ''
 gym_train_ratio: 0.8
 gym_split_type: train
-gym_limit: null
-# umetrip: 001-032 = eval, rest = train
-gym_eval_number_range: "001-032"
+gym_limit: 4
+gym_eval_number_range: 001-032
 gym_seed: 42
-
 gbox_mini_agent_base_url: http://127.0.0.1:3100
 gbox_mini_agent_agent: mai-ui
 gbox_mini_agent_standard_action_space: mobile
-model_base_url: ""  # Empty = auto-resolve AReaL vLLM; else e.g. http://<host>:<port>/v1 (port 10000-50000 when AReaL runs vLLM)
-model_name: ""
-
-monitor_base_url: ""
-project_id: ""
-project_token: ""
-
+model_base_url: ''
+model_name: ''
+monitor_base_url: ''
+project_id: ''
+project_token: ''
 cluster:
   n_nodes: 1
   n_gpus_per_node: 1
-  # Persistent directory under cua_agent (survives reboot)
   fileroot: /home/zhenwei/AReaL/examples/cua_agent/experiments
-
-allocation_mode: "vllm:d1p1t1+d1p1t1"
-
+allocation_mode: vllm:d1p1t1+d1p1t1
 rollout:
   experiment_name: ${experiment_name}
   trial_name: ${trial_name}
-  max_concurrent_rollouts: 8
+  max_concurrent_rollouts: 4
   consumer_batch_size: ${train_dataset.batch_size}
   fileroot: ${cluster.fileroot}
   tokenizer_path: ${tokenizer_path}
-  # Single-GPU server: give rollout worker 1 GPU so vLLM can use it (default is 0).
   scheduling_spec:
-    - cmd: python -m areal.infra.rpc.rpc_server
-      gpu: 1
-
+  - cmd: python -m areal.infra.rpc.rpc_server
+    gpu: 1
 gconfig:
-  n_samples: 4  # GRPO: 4 rollouts per group
+  n_samples: 4
   min_new_tokens: 0
   max_new_tokens: 2048
   temperature: 0.0
-
-# AReaL-managed vLLM for rollout: must use same model as actor (MAI-UI-8B).
 vllm:
   model: ${actor.path}
   seed: ${seed}
   skip_tokenizer_init: false
   dtype: ${actor.dtype}
-  max_model_len: 200000  # 256k context for CUA
+  max_model_len: 200000
   limit_mm_per_prompt: '{"image":64}'
-  allowed_media_domains: "screenshots.tos-cn-guangzhou.volces.com"
-  # KV cache offload to Redis (LMCache) so 256k context fits when GPU KV memory is limited
+  allowed_media_domains: screenshots.tos-cn-guangzhou.volces.com
   kv_offloading_size: 20
-  kv_offloading_backend: "lmcache"
-  lmcache_remote_url: "redis://localhost:6379"  # set to your Redis URL (e.g. redis://host:6379)
-  # Single-GPU colocation: vLLM+actor+ref share one card (~50+67+17 GiB); 0.22 keeps vLLM ~31GiB so total fits in 140GiB.
+  kv_offloading_backend: lmcache
+  lmcache_remote_url: redis://localhost:6379
   gpu_memory_utilization: 0.22
-
 actor:
   experiment_name: ${experiment_name}
   trial_name: ${trial_name}
-  path: Tongyi-MAI/MAI-UI-8B  # MAI-UI GUI agent (vLLM deploy: https://huggingface.co/Tongyi-MAI/MAI-UI-8B)
+  path: Tongyi-MAI/MAI-UI-8B
   init_from_scratch: false
   dtype: bfloat16
   weight_update_mode: disk
-  # GRPO: group-level reward normalization (4 rollouts per prompt)
+  mb_spec:
+    max_tokens_per_mb: 16384
+  optimizer:
+    type: adam
+    lr: 1.7e-05
+    weight_decay: 0.017
+    beta1: 0.9
+    beta2: 0.999
+    warmup_steps_proportion: 0.0
+    lr_scheduler_type: cosine
+    gradient_clipping: 1.0
   reward_norm:
     mean_level: group
     std_level: group
@@ -91,48 +79,41 @@ actor:
   adv_norm:
     mean_level: batch
     std_level: batch
-# Single-GPU: colocation puts actor (and ref) on same GPU as vLLM. For 2 GPUs set type: separation and n_gpus_per_node: 2, actor scheduling_spec with gpu: 1.
   scheduling_strategy:
     type: colocation
     target: rollout
-
 ref:
   experiment_name: ${experiment_name}
   trial_name: ${trial_name}
   path: ${actor.path}
   dtype: ${actor.dtype}
-# Single-GPU: reuse actor workers (actor already colocated with rollout).
   scheduling_strategy:
     type: colocation
     target: actor
-
 train_dataset:
-  path: cua_gym  # ignored; tasks from gym
+  path: cua_gym
   type: rl
-  batch_size: 4
+  batch_size: 1
   shuffle: true
-
 valid_dataset:
   path: cua_gym
   type: rl
-  batch_size: 2
-
+  batch_size: 1
 saver:
   experiment_name: ${experiment_name}
   trial_name: ${trial_name}
   fileroot: ${cluster.fileroot}
-
+  freq_steps: 1
+  freq_epochs: null
 recover:
   experiment_name: ${experiment_name}
   trial_name: ${trial_name}
   fileroot: ${cluster.fileroot}
   mode: disabled
-
 evaluator:
   experiment_name: ${experiment_name}
   trial_name: ${trial_name}
   fileroot: ${cluster.fileroot}
-
 stats_logger:
   experiment_name: ${experiment_name}
   trial_name: ${trial_name}

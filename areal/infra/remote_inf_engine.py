@@ -407,6 +407,26 @@ class RemoteInfEngine(InferenceEngine):
         elif len(self.local_server_processes) > 0:
             self.addresses = [f"{s.host}:{s.port}" for s in self.local_server_processes]
             self.logger.info("Get server addresses from the local subprocess.")
+            # Register vLLM address so workflow (e.g. CUA) can resolve and pass to mini agent
+            if (
+                self.config.experiment_name is not None
+                and self.config.trial_name is not None
+            ):
+                gen_servers_name = names.gen_servers(
+                    self.config.experiment_name, self.config.trial_name
+                )
+                for addr in self.addresses:
+                    name_resolve.add_subentry(gen_servers_name, addr)
+                first_addr = self.addresses[0]
+                vllm_url = (
+                    f"http://{first_addr}/v1"
+                    if "/v1" not in first_addr
+                    else f"http://{first_addr}"
+                )
+                self.logger.info(
+                    "vLLM inference URL (for gbox/mini-agent baseUrl): %s",
+                    vllm_url,
+                )
         elif (
             self.config.experiment_name is not None
             and self.config.trial_name is not None
