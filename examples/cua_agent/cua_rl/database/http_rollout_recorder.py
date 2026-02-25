@@ -72,6 +72,11 @@ class HttpRolloutRecorder:
         self.baseline_id = baseline_id
         self.model_path = model_path
 
+        if source_type == "step" and step_id is None:
+            logger.warning(
+                "[HttpRolloutRecorder] step_id is None; rollout may be filtered by Monitor or not linked to step."
+            )
+
         task_name = task_description or task_id_str
         task_payload = {
             "task_id": task_id_str,
@@ -117,6 +122,17 @@ class HttpRolloutRecorder:
             "start_time": datetime.utcnow().isoformat(),
         }
         self.remote_rollout_id = self.ingest_client.post_rollout(rollout_payload, self.rollout_uuid)
+        if self.remote_rollout_id is None:
+            logger.warning(
+                "[HttpRolloutRecorder] post_rollout failed; rollout will not appear in Monitor."
+            )
+        else:
+            logger.debug(
+                "Monitor: rollout created, rollout_id=%s, group_num=%s, env_index=%s",
+                self.rollout_uuid,
+                group_num,
+                env_index,
+            )
         return self.remote_rollout_id is not None
 
     def update_environment(

@@ -75,7 +75,15 @@ class GroupedRolloutWorkflow(RolloutWorkflow):
         from areal.experimental.openai import InteractionWithTokenLogpReward
 
         results = await asyncio.gather(
-            *[self.workflow.arun_episode(engine, data) for _ in range(self.group_size)]
+            *[
+                self.workflow.arun_episode(
+                    engine,
+                    {**data, "env_index_in_group": j}
+                    if isinstance(data, dict)
+                    else data,
+                )
+                for j in range(self.group_size)
+            ]
         )
 
         valid_results = [r for r in results if r is not None]

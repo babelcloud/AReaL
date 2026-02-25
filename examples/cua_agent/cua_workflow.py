@@ -151,6 +151,8 @@ class CUAAgentWorkflow(RolloutWorkflow):
         monitor_ingest_config: dict[str, Any] | None = None,
         step_id: int | None = None,
         global_step: int | None = None,
+        batch: int | None = None,
+        group_size: int | None = None,
         experiment_name: str | None = None,
         trial_name: str | None = None,
         gym_task_list: list[dict] | None = None,
@@ -173,6 +175,8 @@ class CUAAgentWorkflow(RolloutWorkflow):
         self.monitor_ingest_config = monitor_ingest_config or {}
         self.step_id = step_id
         self.global_step = global_step
+        self.batch = batch
+        self.group_size = group_size or 1
         self.gym_task_list = gym_task_list
 
     def _resolve_model_base_url(self) -> str:
@@ -269,6 +273,16 @@ class CUAAgentWorkflow(RolloutWorkflow):
         if rollout_recorder is not None:
             resolved_base_url = self._resolve_model_base_url()
             model_path_str = self.model_name or resolved_base_url or self.model_base_url or ""
+            item_idx = data.get("item_idx", 0) if isinstance(data, dict) else 0
+            group_size = getattr(self, "group_size", None) or 1
+            group_num = item_idx // group_size if group_size else 0
+            env_index_in_group = data.get("env_index_in_group", 0) if isinstance(data, dict) else 0
+            env_index = env_index_in_group if group_size > 1 else 0
+            batch = getattr(self, "batch", 0)
+            logger.info(
+                "Rollout starting (task_id=%s, group_num=%s, env_index=%s)",
+                task_id, group_num, env_index,
+            )
             if not rollout_recorder.start_rollout(
                 task_id_str=task_id,
                 task_description=description or name,
@@ -278,6 +292,9 @@ class CUAAgentWorkflow(RolloutWorkflow):
                 step_id=rollout_recorder.step_id,
                 eval_id=rollout_recorder.eval_id,
                 baseline_id=rollout_recorder.baseline_id,
+                batch=batch,
+                group_num=group_num,
+                env_index=env_index,
                 max_turns=self.max_turns,
             ):
                 logger.warning("CUA rollout_recorder.start_rollout failed, continuing without monitor")
@@ -295,6 +312,11 @@ class CUAAgentWorkflow(RolloutWorkflow):
                 gbox_mini_agent_standard_action_space=self.standard_action_space,
                 max_task_time_seconds=self.max_task_time_seconds,
                 max_turn_time_seconds=self.max_turn_time_seconds,
+                step=(self.global_step + 1) if self.global_step is not None else None,
+                group_num=group_num,
+                task_id=task_id,
+                execution_id=ctx.execution_id,
+                task_number=getattr(ctx, "task_number", None),
             )
         except Exception as e:
             logger.warning("CUA run_mini_agent_rollout failed: %s", e)

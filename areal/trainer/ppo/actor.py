@@ -302,6 +302,37 @@ class PPOActor:
                 **{k: data[k].float() for k in self.config.log_agent_stats_keys},
                 denominator="agent",
             )
+
+        # Log per-group rewards to show relative advantages within each group
+        if getattr(self.config, 'log_group_rewards', False):
+            group_size = data.get('group_size', 1)
+            bs = reward_score.shape[0]
+            n_groups = bs // group_size if group_size > 0 else 0
+            if n_groups > 0 and bs == n_groups * group_size:
+                rewards_np = reward_score.cpu().numpy()
+                seqlens_np = seqlens.cpu().numpy()
+                lines = []
+                lines.append("=" * 80)
+                lines.append("  Group Rewards (group_size=%d, n_groups=%d)" % (group_size, n_groups))
+                lines.append("-" * 80)
+                lines.append("  %-8s | %-20s | %-8s | %-8s | %-20s" % (
+                    "Group", "Rewards", "Mean", "Best", "Advantages (r - mean)"
+                ))
+                lines.append("-" * 80)
+                for g in range(n_groups):
+                    start_idx = g * group_size
+                    end_idx = start_idx + group_size
+                    group_rewards = rewards_np[start_idx:end_idx]
+                    group_seqlens = seqlens_np[start_idx:end_idx]
+                    reward_strs = ", ".join([("%.2f" % r) for r in group_rewards])
+                    mean_reward = group_rewards.mean()
+                    best_idx = int(group_rewards.argmax())
+                    adv_strs = ", ".join([("%.2f" % (r - mean_reward)) for r in group_rewards])
+                    lines.append("  %-8d | %-20s | %-8.2f | %-8d | %-20s" % (
+                        g, reward_strs, mean_reward, best_idx, adv_strs
+                    ))
+                lines.append("=" * 80)
+                logger.info("\n".join(lines))
         ########## Logging code ends ##########
 
         # Pop keys that are no longer needed after advantage computation

@@ -472,7 +472,9 @@ class FSDPEngine(TrainEngine):
 
     def save(self, meta: SaveLoadMeta):
         if meta.weight_format == "hf":
-            self._save_model_to_hf(meta.path, meta.tokenizer, meta.processor)
+            tokenizer = meta.tokenizer if meta.tokenizer is not None else self.tokenizer
+            processor = meta.processor if meta.processor is not None else self.processor
+            self._save_model_to_hf(meta.path, tokenizer, processor)
         elif meta.weight_format == "dcp":
             self._save_to_dcp(meta.path, meta.with_optim)
         else:

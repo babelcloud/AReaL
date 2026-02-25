@@ -33,6 +33,10 @@ def record_step_before_rollout(step: int, batch: Optional[int] = None) -> Option
     ingest = get_ingest_client()
     training_id = get_training_id()
     if not ingest or not training_id:
+        logger.warning(
+            "Monitor: step not posted (ingest or training_id missing). "
+            "Timeline will not show this step; check Monitor is enabled and post_training returned training_id."
+        )
         return None
     try:
         client_id = f"step-{training_id}-{step}-{batch or 0}"
@@ -44,9 +48,20 @@ def record_step_before_rollout(step: int, batch: Optional[int] = None) -> Option
             "current_phase": "rollout",
             "start_time": datetime.utcnow().isoformat(),
         }
+        logger.info(
+            "Monitor: posting step %s for training_id=%s (open this training in Monitor Timeline to see steps/rollouts)",
+            step,
+            training_id,
+        )
         step_id = ingest.post_step(payload, client_id)
-        if step_id is not None:
-            set_step_id(step_id)
+        if step_id is None:
+            logger.warning(
+                "Monitor: post_step returned no step_id; check ingest API, training_id, and network. "
+                "Rollouts may be dropped or not linked to this step."
+            )
+            return None
+        set_step_id(step_id)
+        logger.info("Monitor: step %s posted, step_id=%s", step, step_id)
         return step_id
     except Exception as e:
         logger.warning(f"Failed to record step before rollout to monitor: {e}")

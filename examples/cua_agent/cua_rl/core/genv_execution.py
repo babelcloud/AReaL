@@ -12,6 +12,8 @@ import httpx
 from cua_rl.core.genv_http_client import AsyncGenvHttpClient
 
 logger = logging.getLogger(__name__)
+# Use RLTrainer logger for create_execution so logs show in training script output
+_rl_logger = logging.getLogger("RLTrainer")
 
 
 def _normalize_base_url(base_url: str) -> str:
@@ -83,6 +85,22 @@ def _pick_task_identifier(task_hint: str | None, task_items: Iterable[dict]) -> 
     return task_ids[0] if task_ids else None
 
 
+def _get_task_number_from_tasks(task_identifier: str, task_items: Iterable[dict]) -> Optional[str]:
+    """Return task number (e.g. 088, 072) from task list, or None."""
+    for item in task_items:
+        if not isinstance(item, dict):
+            continue
+        tid = item.get("task_id") or item.get("id") or (item.get("meta") or {}).get("id")
+        if tid != task_identifier:
+            continue
+        num = item.get("task_number")
+        if isinstance(num, str) and num.strip():
+            return num.strip()
+        num = (item.get("meta") or {}).get("number")
+        if isinstance(num, str) and num.strip():
+            return num.strip()
+    return None
+
 def _build_env_build_details(
     *,
     start_time: float,
@@ -120,6 +138,7 @@ class GenvExecutionContext:
     execution_id: str
     task_identifier: str
     env_build: dict[str, Any]
+    task_number: Optional[str] = None
 
     def agent_env_payload(self) -> dict[str, Any]:
         return {
@@ -156,22 +175,57 @@ async def create_execution(
     gym_id: str,
     task_identifier: str,
     options: Optional[dict[str, Any]] = None,
+    task_number: Optional[str] = None,
     max_retries: int = 3,
     retry_delay: float = 10.0,
 ) -> dict[str, Any]:
+    t0 = time.monotonic()
+    task_label = ("task-%s" % task_number) if task_number else ("task=%s" % task_identifier)
+    _rl_logger.info("create_execution start for %s", task_label)
     last_exc: Exception | None = None
     for attempt in range(1, max_retries + 1):
         client = AsyncGenvHttpClient(gym_id=gym_id, base_url=base_url)
         try:
-            return await client.create_execution(
+            result = await client.create_execution(
                 task_identifier=task_identifier,
                 options=options or {},
             )
+            duration = time.monotonic() - t0
+            execution_id = result.get("execution_id", "")
+            # Gym may return box/device id under different keys (umetrip uses device.device_serial)
+            box_id = (
+                result.get("box_id")
+                or result.get("gbox_id")
+                or result.get("boxId")
+                or result.get("container_id")
+                or result.get("env_id")
+                or result.get("environment_id")
+            )
+            if not box_id and isinstance(result.get("device"), dict):
+                box_id = result["device"].get("device_serial") or result["device"].get("box_id") or result["device"].get("id")
+            if not box_id and isinstance(result.get("environment"), dict):
+                box_id = result["environment"].get("id") or result["environment"].get("box_id") or result["environment"].get("boxId")
+            if not box_id and isinstance(result.get("box"), dict):
+                box_id = result["box"].get("id") or result["box"].get("box_id")
+            box_id = box_id or ""
+            if not box_id and isinstance(result, dict):
+                _rl_logger.info(
+                    "create_execution done for %s, duration=%.2fs, execution_id=%s, box_id= (response keys: %s)",
+                    task_label, duration, execution_id, list(result.keys()),
+                )
+            else:
+                _rl_logger.info(
+                    "create_execution done for %s, duration=%.2fs, execution_id=%s, box_id=%s",
+                    task_label, duration, execution_id, box_id,
+                )
+            return result
         except Exception as exc:
             last_exc = exc
+            err_msg = f"{type(exc).__name__}: {exc}" if str(exc) else type(exc).__name__
             logger.warning(
                 f"create_execution attempt {attempt}/{max_retries} failed for "
-                f"task={task_identifier}: {exc}"
+                f"task={task_identifier}: {err_msg}",
+                exc_info=True,
             )
             if attempt < max_retries:
                 await asyncio.sleep(retry_delay * attempt)
@@ -264,10 +318,12 @@ async def start_genv_execution(
     if not task_identifier:
         raise RuntimeError("Unable to resolve genv task identifier from gym tasks.")
 
+    task_number = _get_task_number_from_tasks(task_identifier, tasks)
     execution_response = await create_execution(
         base_url=gym_base_url,
         gym_id=gym_id,
         task_identifier=task_identifier,
+        task_number=task_number,
     )
 
     execution_id = execution_response.get("execution_id")
@@ -291,4 +347,5 @@ async def start_genv_execution(
         execution_id=execution_id,
         task_identifier=task_identifier,
         env_build=env_build,
+        task_number=task_number,
     )

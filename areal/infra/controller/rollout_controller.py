@@ -768,9 +768,12 @@ class RolloutController:
 
         def task_input_generator():
             for data in cycle_dataloader(dataloader):
-                for item in data:
+                for idx, item in enumerate(data):
+                    item_with_idx = (
+                        {**item, "item_idx": idx} if isinstance(item, dict) else item
+                    )
                     yield _RemoteRolloutTaskInput(
-                        data=item,
+                        data=item_with_idx,
                         workflow=workflow_str,
                         workflow_kwargs=workflow_kwargs,
                         should_accept_fn=should_accept_fn,

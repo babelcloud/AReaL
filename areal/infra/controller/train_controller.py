@@ -480,7 +480,18 @@ class TrainController:
         meta : SaveLoadMeta
             Metadata containing information about where and how to save
         """
-        self._custom_function_call("save", meta)
+        # Avoid sending tokenizer/processor over RPC (not JSON-serializable).
+        # Workers use their local tokenizer/processor when meta has None.
+        meta_for_rpc = SaveLoadMeta(
+            path=meta.path,
+            weight_format=meta.weight_format,
+            with_optim=meta.with_optim,
+            tokenizer=None,
+            processor=None,
+            base_model_path=meta.base_model_path,
+            naive_distributed=meta.naive_distributed,
+        )
+        self._custom_function_call("save", meta_for_rpc)
 
     def load(self, meta: SaveLoadMeta):
         """Load model weights and optimizer states from a file.

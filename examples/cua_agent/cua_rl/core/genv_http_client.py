@@ -34,7 +34,7 @@ class GenvHttpClient:
             base_url=self.base_url,
             timeout=httpx.Timeout(
                 connect=60.0,
-                read=60.0,
+                read=600.0,  # 10 min for long-running create_execution
                 write=60.0,
                 pool=30.0,
             ),
@@ -72,7 +72,7 @@ class GenvHttpClient:
         response = self.client.post(
             f"/api/v1/{self.gym_id}/tasks/{task_identifier}",
             json=request_body,
-            timeout=120.0,
+            timeout=600.0,  # 10 min for resource creation
         )
         if not response.is_success:
             try:
@@ -144,7 +144,7 @@ class AsyncGenvHttpClient:
             base_url=self.base_url,
             timeout=httpx.Timeout(
                 connect=60.0,
-                read=60.0,
+                read=600.0,  # 10 min for long-running create_execution
                 write=60.0,
                 pool=30.0,
             ),
@@ -173,7 +173,7 @@ class AsyncGenvHttpClient:
         response = await self.client.post(
             f"/api/v1/{self.gym_id}/tasks/{task_identifier}",
             json=request_body,
-            timeout=300.0,
+            timeout=600.0,  # 10 min for resource creation
         )
         try:
             response.raise_for_status()

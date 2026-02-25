@@ -1057,6 +1057,11 @@ class PPOActorConfig(TrainEngineConfig):
         default=1024,
         metadata={"help": "Maximum number of new tokens to generate"},
     )
+    # Group-level reward logging
+    log_group_rewards: bool = field(
+        default=True,
+        metadata={"help": "Log per-group rewards to show relative advantages within each group"},
+    )
 
     def should_compute_prox_logp(self) -> bool:
         """Determine if forward pass is needed for proximal log-probabilities.

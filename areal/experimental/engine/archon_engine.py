@@ -728,7 +728,9 @@ class ArchonEngine(TrainEngine):
     def save(self, meta: SaveLoadMeta):
         """Save model in HuggingFace or DCP format."""
         if meta.weight_format == "hf":
-            save_model_to_hf(self, meta.path, meta.tokenizer, meta.processor)
+            tokenizer = meta.tokenizer if meta.tokenizer is not None else self.tokenizer
+            processor = meta.processor
+            save_model_to_hf(self, meta.path, tokenizer, processor)
         elif meta.weight_format == "dcp":
             save_to_dcp(self, meta.path, meta.with_optim)
         else:

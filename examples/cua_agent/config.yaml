@@ -11,7 +11,7 @@ gym_base_url: http://20.57.165.105:5010
 gym_id: ''
 gym_train_ratio: 0.8
 gym_split_type: train
-gym_limit: 4
+gym_limit: null
 gym_eval_number_range: 001-032
 gym_seed: 42
 gbox_mini_agent_base_url: http://127.0.0.1:3100
@@ -38,7 +38,7 @@ rollout:
   - cmd: python -m areal.infra.rpc.rpc_server
     gpu: 1
 gconfig:
-  n_samples: 4
+  n_samples: 2
   min_new_tokens: 0
   max_new_tokens: 2048
   temperature: 0.0

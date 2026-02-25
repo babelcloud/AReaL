@@ -510,10 +510,12 @@ class MegatronEngine(TrainEngine):
                 raise ValueError(
                     "HF format does not support optimizer state saving, please use DCP format instead."
                 )
+            tokenizer = meta.tokenizer if meta.tokenizer is not None else self.tokenizer
+            processor = meta.processor
             self._save_model_to_hf(
                 meta.path,
-                tokenizer=meta.tokenizer,
-                processor=meta.processor,
+                tokenizer=tokenizer,
+                processor=processor,
                 base_model_path=meta.base_model_path,
             )
         elif meta.weight_format == "dcp":

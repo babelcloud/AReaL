@@ -383,6 +383,11 @@ async def run_mini_agent_rollout(
     gbox_mini_agent_standard_action_space: str | None,
     max_task_time_seconds: int | None = None,
     max_turn_time_seconds: int | None = None,
+    step: int | None = None,
+    group_num: int | None = None,
+    task_id: str | None = None,
+    execution_id: str | None = None,
+    task_number: str | None = None,
 ) -> Dict[str, Any]:
     payload: dict = {
         "task": task,
@@ -413,6 +418,16 @@ async def run_mini_agent_rollout(
         f"[gbox-mini-agent] Starting run: agent={gbox_mini_agent_agent} "
         f"max_turns={max_turns} base_url={gbox_mini_agent_base_url}"
     )
+
+    rollout_id_short = (rollout_logger.rollout_id or "")[:8]
+    log_prefix_parts = []
+    if step is not None:
+        log_prefix_parts.append("step=%s" % step)
+    if group_num is not None:
+        log_prefix_parts.append("group=%s" % group_num)
+    if rollout_id_short:
+        log_prefix_parts.append("rollout=%s" % rollout_id_short)
+    log_prefix = " [%s]" % " ".join(log_prefix_parts) if log_prefix_parts else ""
 
     events_seen: set[str] = set()
     model_input_recorded_turns: set[int] = set()
@@ -494,6 +509,10 @@ async def run_mini_agent_rollout(
                     turn_num = _step_to_turn_num(step)
                     max_turn_seen = max(max_turn_seen, turn_num)
                     rollout_logger.start_turn(turn_num, max_turns)
+                    rollout_logger.log(
+                        "Rollout%s turn %s/%s" % (log_prefix, turn_num, max_turns),
+                        flush_immediately=True,
+                    )
                     if rollout_recorder is not None:
                         rollout_recorder.start_turn(turn_num)
                         rollout_recorder.update_status(
@@ -939,6 +958,26 @@ async def run_mini_agent_rollout(
             status_message=run_reason,
         )
 
+    finished_extra = []
+    if task_number:
+        finished_extra.append("task-%s" % task_number)
+    if task_id:
+        finished_extra.append("task_id=%s" % (task_id[:12] + "..." if len(task_id) > 12 else task_id))
+    if execution_id:
+        finished_extra.append("execution_id=%s" % execution_id)
+    extra_str = ", " + ", ".join(finished_extra) if finished_extra else ""
+    rollout_logger.log(
+        "Rollout%s finished: status=%s, turns=%s/%s, task_success=%s%s"
+        % (
+            log_prefix,
+            "completed" if run_ok else "failed",
+            max_turn_seen,
+            max_turns,
+            run_ok,
+            extra_str,
+        ),
+        flush_immediately=True,
+    )
     return {
         "task_success": bool(run_ok),
         "task_completed": bool(run_ok),

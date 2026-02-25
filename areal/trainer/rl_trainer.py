@@ -250,8 +250,15 @@ class PPOTrainer:
             if workflow_kwargs is not None:
                 workflow_kwargs["step_id"] = step_id
                 workflow_kwargs["global_step"] = global_step
+                workflow_kwargs["batch"] = 0
+                workflow_kwargs["group_size"] = config.gconfig.n_samples
 
             if self.actor.is_data_parallel_head():
+                if step_id is not None:
+                    logger.info(
+                        "[Monitor] Step %d/%d posted, step_id=%s",
+                        global_step + 1, max_steps, step_id,
+                    )
                 logger.info(
                     "[Step %d/%d] Epoch %d/%d | phase: rollout",
                     global_step + 1, max_steps, epoch + 1, total_epochs,
@@ -320,6 +327,9 @@ class PPOTrainer:
                 ):
                     rollout_batch["ref_logp"] = self.ref.compute_logp(rollout_batch)
                     self.ref.get_device_stats().log("ref logp")
+
+            # Pass group_size to actor for logging
+            rollout_batch["group_size"] = config.gconfig.n_samples
 
             with (
                 stats_tracker.record_timing("compute_advantage"),

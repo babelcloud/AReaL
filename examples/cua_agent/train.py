@@ -66,7 +66,10 @@ def main(args: list[str] | None = None) -> None:
             })
             if training_id is not None:
                 set_training_id(training_id)
-                logger.info("Training Monitor: training created, training_id=%s", training_id)
+                logger.info(
+                    "Training Monitor: training created, training_id=%s — 请在 Monitor Timeline 中打开该 training 查看 steps/rollouts",
+                    training_id,
+                )
             else:
                 logger.warning(
                     "Training Monitor: post_training returned no training_id; check ingest API response and base_url (e.g. use http://host/178 if UI is at .../178/...)"
@@ -135,6 +138,49 @@ def main(args: list[str] | None = None) -> None:
                 )
         except Exception as e:
             logger.warning("Training Monitor post tasks failed: %s", e)
+
+    # Pre-warm gbox pool: create N executions and immediately terminate them so that
+    # N gbox boxes are allocated and sit in the DevicePool idle queue before training starts.
+    # This avoids cold-start latency on the first N rollouts and ensures box reuse across rollouts.
+    # N = max_concurrent_rollouts × n_samples (each rollout worker produces n_samples executions)
+    _max_concurrent_rollouts = getattr(getattr(config, "rollout", None), "max_concurrent_rollouts", None) or 4
+    _n_samples = getattr(getattr(config, "gconfig", None), "n_samples", None) or 1
+    _prewarm_n = _max_concurrent_rollouts * _n_samples
+    _prewarm_gym_id = config.gym_id or "umetrip"
+    _prewarm_base_url = config.gym_base_url or "http://localhost:5010"
+    if gym_task_list:
+        logger.info(
+            "Pre-warming gbox pool: creating %d executions to fill idle box pool ...",
+            _prewarm_n,
+        )
+        try:
+            import concurrent.futures as _cf
+            from cua_rl.core.genv_http_client import GenvHttpClient
+
+            _first_task_id = gym_task_list[0].get("task_id") or gym_task_list[0].get("id")
+
+            def _prewarm_one(_idx: int) -> None:
+                _client = GenvHttpClient(gym_id=_prewarm_gym_id, base_url=_prewarm_base_url)
+                try:
+                    resp = _client.create_execution(task_identifier=_first_task_id)
+                    exec_id = resp.get("execution_id")
+                    if exec_id:
+                        _client.terminate_execution(execution_id=exec_id)
+                        logger.debug("Pre-warm slot %d: execution %s terminated -> box in idle pool", _idx, exec_id[:8])
+                    else:
+                        logger.warning("Pre-warm slot %d: create_execution returned no execution_id", _idx)
+                except Exception as _e:
+                    logger.warning("Pre-warm slot %d failed (non-fatal): %s", _idx, _e)
+                finally:
+                    _client.close()
+
+            with _cf.ThreadPoolExecutor(max_workers=_prewarm_n) as _pool:
+                list(_pool.map(_prewarm_one, range(_prewarm_n)))
+            logger.info("Pre-warm complete: %d box(es) ready in idle pool.", _prewarm_n)
+        except Exception as _e:
+            logger.warning("Pre-warm failed (non-fatal, training will continue): %s", _e)
+    else:
+        logger.warning("Pre-warm skipped: gym_task_list is empty.")
 
     model_base_url = config.model_base_url or os.environ.get("MODEL_BASE_URL", "")
     model_name = config.model_name or os.environ.get("MODEL_NAME", "")
