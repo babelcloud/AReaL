@@ -204,7 +204,11 @@ class CUAAgentWorkflow(RolloutWorkflow):
     ) -> dict[str, torch.Tensor] | None:
         task_id = data.get("task_id") or data.get("id", "")
         description = data.get("description", "")
+        instruction = data.get("instruction") or description
         name = data.get("name", "")
+        task_number = data.get("task_number", "")
+        tags = data.get("tags", [])
+        difficulty = data.get("difficulty", "")
         gym_base_url = data.get("gym_base_url", "")
         gym_id = data.get("gym_id", "")
 
@@ -253,6 +257,20 @@ class CUAAgentWorkflow(RolloutWorkflow):
             logger.warning("CUA start_genv_execution failed: %s", e)
             return None
 
+        # Log task details for debugging (use print for visibility in worker processes)
+        tags_str = ",".join(tags) if isinstance(tags, list) else str(tags)
+        print(
+            f"\n{'='*60}\n"
+            f"CUA Task Started:\n"
+            f"  task_number: {task_number or 'N/A'}\n"
+            f"  difficulty:  {difficulty or 'N/A'}\n"
+            f"  tags:        [{tags_str}]\n"
+            f"  instruction: {instruction[:200] + '...' if len(instruction) > 200 else instruction}\n"
+            f"  description: {description[:100] + '...' if len(description) > 100 else description}\n"
+            f"{'='*60}",
+            flush=True,
+        )
+
         gbox_env = ctx.agent_env_payload()
         resolved_base_url = self._resolve_model_base_url()
         model_payload: dict[str, Any] = {}
@@ -285,7 +303,7 @@ class CUAAgentWorkflow(RolloutWorkflow):
             )
             if not rollout_recorder.start_rollout(
                 task_id_str=task_id,
-                task_description=description or name,
+                task_description=instruction or description or name,
                 model_path=model_path_str,
                 env_type="genv",
                 source_type="step",  # Monitor only accepts baseline/eval/step for rollout filter
@@ -301,7 +319,7 @@ class CUAAgentWorkflow(RolloutWorkflow):
 
         try:
             run_result = await run_mini_agent_rollout(
-                task=description,
+                task=instruction,
                 rollout_logger=rollout_logger,
                 rollout_recorder=rollout_recorder,
                 max_turns=self.max_turns,

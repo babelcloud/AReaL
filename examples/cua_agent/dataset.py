@@ -40,10 +40,18 @@ def get_cua_task_dataset(
     tasks = load_tasks_from_config(config)
     rows = []
     for t in tasks:
+        # Get task_number from genv_task_data if available
+        task_number = None
+        if hasattr(t, 'genv_task_data') and isinstance(t.genv_task_data, dict):
+            meta = t.genv_task_data.get('meta', {})
+            task_number = meta.get('number')
         rows.append({
             "task_id": t.id,
             "name": t.name,
             "description": t.description,
+            "instruction": getattr(t, 'instruction', None) or t.description,
+            "task_number": task_number,
+            "tags": t.tags if hasattr(t, 'tags') else [],
             "gym_base_url": gym_base_url,
             "gym_id": gym_id,
             "difficulty": t.difficulty.value,
