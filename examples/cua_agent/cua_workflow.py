@@ -293,7 +293,7 @@ class CUAAgentWorkflow(RolloutWorkflow):
             model_path_str = self.model_name or resolved_base_url or self.model_base_url or ""
             item_idx = data.get("item_idx", 0) if isinstance(data, dict) else 0
             group_size = getattr(self, "group_size", None) or 1
-            group_num = item_idx // group_size if group_size else 0
+            group_num = item_idx  # Each batch item is a task, so item_idx is the group number
             env_index_in_group = data.get("env_index_in_group", 0) if isinstance(data, dict) else 0
             env_index = env_index_in_group if group_size > 1 else 0
             batch = getattr(self, "batch", 0)

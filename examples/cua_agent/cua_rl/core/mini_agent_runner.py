@@ -223,13 +223,14 @@ def _parse_iso_ts(ts: Any) -> float | None:
 
 
 def _event_step(event: dict) -> int:
-    """Get 0-based step index from event (gbox-mini-agent uses step, 0-based)."""
+    """Get step index from event (gbox-mini-agent uses step, 1-based)."""
     return int(event.get("step", event.get("turn", 0)))
 
 
 def _step_to_turn_num(step: int) -> int:
-    """Convert 0-based step to 1-based turn_num for display and ingest."""
-    return step + 1
+    # gbox-mini-agent step is already 1-based, so return as-is
+    """Return step as turn_num (gbox-mini-agent step is already 1-based)."""
+    return step
 
 
 def _events_to_turn_timings(events: list[dict]) -> dict[int, dict]:
@@ -505,6 +506,11 @@ async def run_mini_agent_rollout(
                 # Newer gbox-mini-agent uses step_* events with `step` (1-based).
                 # Keep backward compatibility with turn_* and `turn`.
                 if event_type in ("step_start", "turn_start"):
+                    # #region agent log
+                    import json as _json_debug
+                    with open("/home/zhenwei/.cursor/debug-597ca8.log", "a") as _f:
+                        _f.write(_json_debug.dumps({"sessionId":"597ca8","hypothesisId":"step_value","location":"mini_agent_runner.py:step_start","message":"step_start_event","data":{"event_type":event_type,"event_step":event.get("step"),"event_turn":event.get("turn"),"raw_event_keys":list(event.keys())},"timestamp":__import__("time").time()}) + "\n")
+                    # #endregion
                     step = _event_step(event)
                     turn_num = _step_to_turn_num(step)
                     max_turn_seen = max(max_turn_seen, turn_num)

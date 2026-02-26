@@ -66,9 +66,18 @@ def main(args: list[str] | None = None) -> None:
             })
             if training_id is not None:
                 set_training_id(training_id)
+                project_id = config.project_id or os.environ.get("PROJECT_ID", "")
+                if project_id:
+                    monitor_url = f"{monitor_base_url.rstrip('/')}/{training_id}?project_id={project_id}"
+                else:
+                    monitor_url = f"{monitor_base_url.rstrip('/')}/{training_id}"
                 logger.info(
-                    "Training Monitor: training created, training_id=%s — 请在 Monitor Timeline 中打开该 training 查看 steps/rollouts",
+                    "Training Monitor: training created, training_id=%s",
                     training_id,
+                )
+                logger.info(
+                    "[Monitor] 查看训练详情: %s",
+                    monitor_url,
                 )
             else:
                 logger.warning(

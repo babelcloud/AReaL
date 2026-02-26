@@ -197,6 +197,11 @@ class HttpRolloutRecorder:
         self._post_rollout_update(payload)
 
     def start_turn(self, turn_num: int, start_time: Optional[datetime] = None) -> Optional[int]:
+        # #region agent log
+        import json as _json_debug
+        with open("/home/zhenwei/.cursor/debug-597ca8.log", "a") as _f:
+            _f.write(_json_debug.dumps({"sessionId":"597ca8","hypothesisId":"turn_start","location":"http_rollout_recorder.py:start_turn","message":"start_turn_called","data":{"turn_num":turn_num,"rollout_uuid":self.rollout_uuid},"timestamp":__import__("time").time()}) + "\n")
+        # #endregion
         resolved_start = start_time or datetime.utcnow()
         return self._ensure_turn(turn_num, start_time=resolved_start)
 
@@ -265,6 +270,11 @@ class HttpRolloutRecorder:
             return None
 
     def record_observation(self, turn_num: int, **kwargs: Any) -> Optional[int]:
+        # #region agent log
+        import json as _json_debug
+        with open("/home/zhenwei/.cursor/debug-597ca8.log", "a") as _f:
+            _f.write(_json_debug.dumps({"sessionId":"597ca8","hypothesisId":"A,B,C,D","location":"http_rollout_recorder.py:record_observation","message":"record_observation_called","data":{"turn_num":turn_num,"kwargs_keys":list(kwargs.keys()),"has_model_input":"model_input" in kwargs,"has_obs_type":"obs_type" in kwargs,"obs_type":kwargs.get("obs_type")},"timestamp":__import__("time").time()}) + "\n")
+        # #endregion
         turn_id = self._ensure_turn(turn_num)
         if turn_id is None:
             return None
@@ -272,7 +282,11 @@ class HttpRolloutRecorder:
             kwargs["model_input_json"] = kwargs.pop("model_input")
         payload = {"turn_id": turn_id}
         payload.update(kwargs)
-        self.ingest_client.post_observation(payload)
+        obs_result = self.ingest_client.post_observation(payload)
+        # #region agent log
+        with open("/home/zhenwei/.cursor/debug-597ca8.log", "a") as _f:
+            _f.write(_json_debug.dumps({"sessionId":"597ca8","hypothesisId":"B","location":"http_rollout_recorder.py:record_observation:after_post","message":"post_observation_result","data":{"turn_id":turn_id,"obs_result":obs_result,"payload_keys":list(payload.keys())},"timestamp":__import__("time").time()}) + "\n")
+        # #endregion
         return turn_id
 
     def record_validation(
