@@ -20,6 +20,7 @@ def get_cua_task_dataset(
     seed: int = 42,
     task_names: str | None = None,
     eval_number_range: str | None = None,
+    tags: str | None = None,
 ) -> Dataset:
     """Load gym tasks and return a HuggingFace Dataset of task dicts (one row per task)."""
     from cua_rl.task_loader import TaskSourceConfig, load_tasks_from_config
@@ -34,6 +35,7 @@ def get_cua_task_dataset(
         seed=seed,
         task_names=task_names,
         eval_number_range=eval_number_range,
+        tags=tags,
     )
     tasks = load_tasks_from_config(config)
     rows = []
@@ -59,6 +61,7 @@ def get_cua_train_and_valid_datasets(
     seed: int = 42,
     task_names: str | None = None,
     eval_number_range: str | None = None,
+    tags: str | None = None,
 ) -> tuple[Dataset, Dataset]:
     """Return (train_dataset, valid_dataset) for CUA."""
     train_ds = get_cua_task_dataset(
@@ -70,6 +73,7 @@ def get_cua_train_and_valid_datasets(
         seed=seed,
         task_names=task_names,
         eval_number_range=eval_number_range,
+        tags=tags,
     )
     valid_ds = get_cua_task_dataset(
         gym_base_url=gym_base_url,
@@ -80,5 +84,6 @@ def get_cua_train_and_valid_datasets(
         seed=seed,
         task_names=task_names,
         eval_number_range=eval_number_range,
+        tags=tags,
     )
     return train_ds, valid_ds

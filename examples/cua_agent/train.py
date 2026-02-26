@@ -85,6 +85,7 @@ def main(args: list[str] | None = None) -> None:
             logger.warning("Training Monitor init failed: %s", err_detail)
 
     # Dataset from gym tasks (no HF path)
+    gym_tags = getattr(config, "gym_tags", None)
     train_dataset, valid_dataset = get_cua_train_and_valid_datasets(
         gym_base_url=config.gym_base_url,
         gym_id=config.gym_id,
@@ -92,7 +93,10 @@ def main(args: list[str] | None = None) -> None:
         limit=config.gym_limit,
         seed=config.gym_seed,
         eval_number_range=getattr(config, "gym_eval_number_range", None),
+        tags=gym_tags,
     )
+    if gym_tags:
+        logger.info("Task filtering by tags: %s", gym_tags)
     n_train, n_valid = len(train_dataset), len(valid_dataset)
     train_ids = [train_dataset[i].get("task_id") or train_dataset[i].get("id") for i in range(min(5, n_train))]
     logger.info(

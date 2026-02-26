@@ -214,6 +214,7 @@ def load_genv_tasks(
     task_names: Optional[str] = None,
     limit: Optional[int] = None,
     eval_number_range: Optional[str] = None,
+    tags: Optional[str] = None,
 ) -> list[CUATask]:
     """
     Load tasks from the Gym server.
@@ -317,6 +318,28 @@ def load_genv_tasks(
             task_names,
             len(chosen_identifiers),
         )
+    # Tags filter: restrict to tasks with specific tags (comma-separated, e.g. "easy,normal").
+    # A task matches if it has ANY of the specified tags.
+    if tags:
+        tag_tokens = [t.strip().lower() for t in str(tags).split(",") if t.strip()]
+        if tag_tokens:
+            def _has_tag(identifier: str) -> bool:
+                task = task_map.get(identifier)
+                if not isinstance(task, dict):
+                    return False
+                task_tags = task.get("tags")
+                if not isinstance(task_tags, list):
+                    return False
+                task_tags_lower = [str(t).lower() for t in task_tags]
+                return any(tok in task_tags_lower for tok in tag_tokens)
+
+            chosen_identifiers = [ident for ident in chosen_identifiers if _has_tag(ident)]
+            logger.info(
+                "[gym] tags filter applied: %r -> %d tasks",
+                tags,
+                len(chosen_identifiers),
+            )
+
     if limit is not None and limit < len(chosen_identifiers):
         rng = random.Random(seed)
         chosen_identifiers = rng.sample(chosen_identifiers, int(limit))

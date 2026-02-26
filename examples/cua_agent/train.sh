@@ -46,9 +46,9 @@ MODEL_NAME="${MODEL_NAME:-}"
 MONITOR_BASE_URL="${MONITOR_BASE_URL:-}"
 PROJECT_ID="${PROJECT_ID:-}"
 PROJECT_TOKEN="${PROJECT_TOKEN:-}"
-MAX_CONCURRENT_ROLLOUTS="${MAX_CONCURRENT_ROLLOUTS:-8}"
-BATCH_SIZE="${BATCH_SIZE:-4}"
-MAX_TURNS="${MAX_TURNS:-30}"
+MAX_CONCURRENT_ROLLOUTS="${MAX_CONCURRENT_ROLLOUTS:-4}"
+BATCH_SIZE="${BATCH_SIZE:-2}"
+MAX_TURNS="${MAX_TURNS:-20}"
 MAX_TASK_TIME="${MAX_TASK_TIME:-600}"
 MAX_STEP_TIME="${MAX_STEP_TIME:-120}"
 GBOX_AGENT="${GBOX_AGENT:-mai-ui}"
@@ -56,6 +56,7 @@ STANDARD_ACTION_SPACE="${STANDARD_ACTION_SPACE:-mobile}"
 GYM_TRAIN_RATIO="${GYM_TRAIN_RATIO:-0.8}"
 GYM_SEED="${GYM_SEED:-42}"
 GYM_LIMIT="${GYM_LIMIT:-}"
+GYM_TAGS="${GYM_TAGS:-}"
 
 # Parse CLI
 while [[ $# -gt 0 ]]; do
@@ -132,6 +133,10 @@ while [[ $# -gt 0 ]]; do
             GYM_LIMIT="$2"
             shift 2
             ;;
+        --gym-tags)
+            GYM_TAGS="$2"
+            shift 2
+            ;;
         --help|-h)
             echo "Usage: $0 [OPTIONS]"
             echo ""
@@ -158,6 +163,10 @@ while [[ $# -gt 0 ]]; do
             echo "  --project-id ID              Project ID"
             echo "  --project-token TOKEN        Project token"
             echo "  (Or set MONITOR_BASE_URL, PROJECT_ID, PROJECT_TOKEN in env or .env)"
+            echo ""
+            echo "Task Filtering:"
+            echo "  --gym-tags TAGS              Filter tasks by difficulty tags (e.g. 'easy', 'easy,normal', 'hard')"
+            echo "                                Available tags: easy, normal, hard"
             echo ""
             echo "Training:"
             echo "  --max-concurrent-rollouts N  Max concurrent rollouts (default: 8). Limits"
@@ -221,6 +230,9 @@ fi
 if [ -n "$GYM_LIMIT" ]; then
     OVERRIDES+=( "gym_limit=$GYM_LIMIT" )
 fi
+if [ -n "$GYM_TAGS" ]; then
+    OVERRIDES+=( "gym_tags=$GYM_TAGS" )
+fi
 
 # Warn if gbox concurrency may be too high (gbox typically supports up to ~8 concurrent rollouts)
 if [ -n "$MAX_CONCURRENT_ROLLOUTS" ] && [ "$MAX_CONCURRENT_ROLLOUTS" -gt 8 ] 2>/dev/null; then
@@ -243,6 +255,7 @@ echo "  project_id:                  $PROJECT_ID"
 echo "  project_token:               ${PROJECT_TOKEN:+***${PROJECT_TOKEN: -4}}"
 echo "  max_concurrent_rollouts:    $MAX_CONCURRENT_ROLLOUTS"
 echo "  batch_size:                 $BATCH_SIZE"
+echo "  gym_tags:                   ${GYM_TAGS:-<all>}"
 echo "============================================"
 echo ""
 

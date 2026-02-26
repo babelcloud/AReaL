@@ -4,7 +4,7 @@ seed: 42
 tokenizer_path: ${actor.path}
 workflow: cua_workflow.CUAAgentWorkflow
 eval_workflow: ${workflow}
-max_turns: 30
+max_turns: 20
 max_task_time_seconds: 600
 max_turn_time_seconds: 120
 gym_base_url: http://20.57.165.105:5010
@@ -14,6 +14,7 @@ gym_split_type: train
 gym_limit: null
 gym_eval_number_range: 001-032
 gym_seed: 42
+gym_tags: null
 gbox_mini_agent_base_url: http://127.0.0.1:3100
 gbox_mini_agent_agent: mai-ui
 gbox_mini_agent_standard_action_space: mobile
@@ -30,7 +31,7 @@ allocation_mode: vllm:d1p1t1+d1p1t1
 rollout:
   experiment_name: ${experiment_name}
   trial_name: ${trial_name}
-  max_concurrent_rollouts: 4
+  max_concurrent_rollouts: 8
   consumer_batch_size: ${train_dataset.batch_size}
   fileroot: ${cluster.fileroot}
   tokenizer_path: ${tokenizer_path}
@@ -38,7 +39,7 @@ rollout:
   - cmd: python -m areal.infra.rpc.rpc_server
     gpu: 1
 gconfig:
-  n_samples: 2
+  n_samples: 4
   min_new_tokens: 0
   max_new_tokens: 2048
   temperature: 0.0
@@ -55,14 +56,19 @@ vllm:
   lmcache_remote_url: redis://localhost:6379
   gpu_memory_utilization: 0.22
 actor:
+  log_group_rewards: true
   experiment_name: ${experiment_name}
   trial_name: ${trial_name}
   path: Tongyi-MAI/MAI-UI-8B
   init_from_scratch: false
   dtype: bfloat16
   weight_update_mode: disk
+  gradient_checkpointing: true
+  fsdp:
+    memory_efficient_load: true
   mb_spec:
-    max_tokens_per_mb: 16384
+    max_tokens_per_mb: 4096
+    n_mbs: 1
   optimizer:
     type: adam
     lr: 1.7e-05
@@ -72,6 +78,7 @@ actor:
     warmup_steps_proportion: 0.0
     lr_scheduler_type: cosine
     gradient_clipping: 1.0
+    offload: true
   reward_norm:
     mean_level: group
     std_level: group
@@ -87,18 +94,20 @@ ref:
   trial_name: ${trial_name}
   path: ${actor.path}
   dtype: ${actor.dtype}
+  fsdp:
+    memory_efficient_load: true
   scheduling_strategy:
     type: colocation
     target: actor
 train_dataset:
   path: cua_gym
   type: rl
-  batch_size: 1
+  batch_size: 2
   shuffle: true
 valid_dataset:
   path: cua_gym
   type: rl
-  batch_size: 1
+  batch_size: 2
 saver:
   experiment_name: ${experiment_name}
   trial_name: ${trial_name}

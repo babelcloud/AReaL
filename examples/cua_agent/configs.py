@@ -49,6 +49,10 @@ class CUAConfig(PPOConfig):
     gym_limit: int | None = field(default=None, metadata={"help": "Limit number of tasks."})
     gym_eval_number_range: str | None = field(default=None, metadata={"help": "Eval set by task number range, e.g. 001-032; rest = train. Overrides train_ratio."})
     gym_seed: int = field(default=42, metadata={"help": "Seed for task sampling/split."})
+    gym_tags: str | None = field(
+        default=None,
+        metadata={"help": "Comma-separated tags to filter tasks by difficulty (e.g. 'easy', 'easy,normal', 'hard'). Tasks with ANY of these tags are included."},
+    )
 
     # gbox-mini-agent
     gbox_mini_agent_base_url: str = field(
