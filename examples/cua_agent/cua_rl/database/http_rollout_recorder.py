@@ -122,6 +122,11 @@ class HttpRolloutRecorder:
             "start_time": datetime.utcnow().isoformat(),
         }
         self.remote_rollout_id = self.ingest_client.post_rollout(rollout_payload, self.rollout_uuid)
+        # #region agent log
+        import json as _json_debug
+        with open("/home/zhenwei/.cursor/debug-597ca8.log", "a") as _f:
+            _f.write(_json_debug.dumps({"sessionId":"597ca8","hypothesisId":"rollout_id","location":"http_rollout_recorder.py:start_rollout","message":"rollout_created","data":{"remote_rollout_id":self.remote_rollout_id,"rollout_uuid":self.rollout_uuid,"step_id":step_id,"group_num":group_num,"env_index":env_index},"timestamp":__import__("time").time()}) + "\n")
+        # #endregion
         if self.remote_rollout_id is None:
             logger.warning(
                 "[HttpRolloutRecorder] post_rollout failed; rollout will not appear in Monitor."

@@ -13,7 +13,7 @@
 #   ./train.sh --gym http://gym:5010 --gym-id gym1 --gbox-mini-url http://gbox:3000 \
 #     --model-base-url http://vllm:8000/v1 --model-name Tongyi-MAI/MAI-UI-8B \
 #     --monitor-base-url https://monitor.example.com --project-id PROJECT_ID --project-token YOUR_TOKEN \
-#     --max-concurrent-rollouts 8 --batch-size 4
+#     --batch-size 4
 
 set -e
 
@@ -46,8 +46,7 @@ MODEL_NAME="${MODEL_NAME:-}"
 MONITOR_BASE_URL="${MONITOR_BASE_URL:-}"
 PROJECT_ID="${PROJECT_ID:-}"
 PROJECT_TOKEN="${PROJECT_TOKEN:-}"
-MAX_CONCURRENT_ROLLOUTS="${MAX_CONCURRENT_ROLLOUTS:-4}"
-BATCH_SIZE="${BATCH_SIZE:-2}"
+BATCH_SIZE="${BATCH_SIZE:-4}"
 MAX_TURNS="${MAX_TURNS:-20}"
 MAX_TASK_TIME="${MAX_TASK_TIME:-600}"
 MAX_STEP_TIME="${MAX_STEP_TIME:-120}"
@@ -95,10 +94,6 @@ while [[ $# -gt 0 ]]; do
             ;;
         --project-token)
             PROJECT_TOKEN="$2"
-            shift 2
-            ;;
-        --max-concurrent-rollouts)
-            MAX_CONCURRENT_ROLLOUTS="$2"
             shift 2
             ;;
         --batch-size)
@@ -169,8 +164,6 @@ while [[ $# -gt 0 ]]; do
             echo "                                Available tags: easy, normal, hard"
             echo ""
             echo "Training:"
-            echo "  --max-concurrent-rollouts N  Max concurrent rollouts (default: 8). Limits"
-            echo "                                simultaneous gbox/gym executions; keep ≤8 for gbox."
             echo "  --batch-size N               Consumer batch size (default: 4)"
             echo "  --max-turns N                Max turns per task (default: 30)"
             echo "  --max-task-time SECS         Max run time per task in seconds (default: 600)"
@@ -208,7 +201,6 @@ OVERRIDES+=( "gym_seed=$GYM_SEED" )
 OVERRIDES+=( "max_turns=$MAX_TURNS" )
 OVERRIDES+=( "max_task_time_seconds=$MAX_TASK_TIME" )
 OVERRIDES+=( "max_turn_time_seconds=$MAX_STEP_TIME" )
-OVERRIDES+=( "rollout.max_concurrent_rollouts=$MAX_CONCURRENT_ROLLOUTS" )
 OVERRIDES+=( "train_dataset.batch_size=$BATCH_SIZE" )
 OVERRIDES+=( "valid_dataset.batch_size=$BATCH_SIZE" )
 
@@ -234,12 +226,9 @@ if [ -n "$GYM_TAGS" ]; then
     OVERRIDES+=( "gym_tags=$GYM_TAGS" )
 fi
 
-# Warn if gbox concurrency may be too high (gbox typically supports up to ~8 concurrent rollouts)
-if [ -n "$MAX_CONCURRENT_ROLLOUTS" ] && [ "$MAX_CONCURRENT_ROLLOUTS" -gt 8 ] 2>/dev/null; then
-    echo "Warning: max_concurrent_rollouts=$MAX_CONCURRENT_ROLLOUTS may exceed gbox capacity. Consider --max-concurrent-rollouts 8 or lower." >&2
-fi
 
 export PYTHONPATH="$SCRIPT_DIR:${PYTHONPATH:-}"
+export WANDB_MODE=disabled
 
 echo "============================================"
 echo "CUA Agent PPO (AReaL)"
@@ -253,7 +242,6 @@ echo "  model_name:                 $MODEL_NAME"
 echo "  monitor_base_url:           $MONITOR_BASE_URL"
 echo "  project_id:                  $PROJECT_ID"
 echo "  project_token:               ${PROJECT_TOKEN:+***${PROJECT_TOKEN: -4}}"
-echo "  max_concurrent_rollouts:    $MAX_CONCURRENT_ROLLOUTS"
 echo "  batch_size:                 $BATCH_SIZE"
 echo "  gym_tags:                   ${GYM_TAGS:-<all>}"
 echo "============================================"

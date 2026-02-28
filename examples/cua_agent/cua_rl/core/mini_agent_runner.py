@@ -180,6 +180,11 @@ def _extract_screenshot_from_messages(messages: Any) -> str | None:
 
 
 def _extract_screenshot_from_actions(actions: Any) -> str | None:
+    """Extract screenshot_after from action observations.
+    
+    The screenshots array from genv contains: [screenshot_before, screenshot_after]
+    We need to find the one named 'screenshot_after', not just take the first element.
+    """
     if not isinstance(actions, list):
         return None
     for action in reversed(actions):
@@ -188,9 +193,16 @@ def _extract_screenshot_from_actions(actions: Any) -> str | None:
         obs = action.get("obs") or {}
         screenshots = obs.get("screenshots") or []
         if isinstance(screenshots, list) and screenshots:
-            first = screenshots[0]
-            if isinstance(first, dict):
-                url = first.get("url")
+            # First, try to find screenshot_after by name
+            for shot in screenshots:
+                if isinstance(shot, dict) and shot.get("name") == "screenshot_after":
+                    url = shot.get("url")
+                    if isinstance(url, str) and url:
+                        return url
+            # Fallback: if no screenshot_after found, use the last screenshot
+            last = screenshots[-1]
+            if isinstance(last, dict):
+                url = last.get("url")
                 if isinstance(url, str) and url:
                     return url
     return None
@@ -506,11 +518,6 @@ async def run_mini_agent_rollout(
                 # Newer gbox-mini-agent uses step_* events with `step` (1-based).
                 # Keep backward compatibility with turn_* and `turn`.
                 if event_type in ("step_start", "turn_start"):
-                    # #region agent log
-                    import json as _json_debug
-                    with open("/home/zhenwei/.cursor/debug-597ca8.log", "a") as _f:
-                        _f.write(_json_debug.dumps({"sessionId":"597ca8","hypothesisId":"step_value","location":"mini_agent_runner.py:step_start","message":"step_start_event","data":{"event_type":event_type,"event_step":event.get("step"),"event_turn":event.get("turn"),"raw_event_keys":list(event.keys())},"timestamp":__import__("time").time()}) + "\n")
-                    # #endregion
                     step = _event_step(event)
                     turn_num = _step_to_turn_num(step)
                     max_turn_seen = max(max_turn_seen, turn_num)
@@ -626,7 +633,7 @@ async def run_mini_agent_rollout(
                     model_response = ""
                     step_payload: dict | None = None
                     step_error: Exception | None = None
-                    step_index = step  # 0-based index for get_steps
+                    step_index = step - 1  # Convert 1-based step to 0-based index for get_steps
                     step_fetch_ok = False
                     fetched_step: dict | None = None
                     # Fetch the new step by index (0-based)
@@ -651,7 +658,7 @@ async def run_mini_agent_rollout(
                                     color="YELLOW",
                                 )
                             if isinstance(fetched_step, dict) and rollout_recorder is not None:
-                                step_turn = step_index + 1  # 1-based turn_num
+                                step_turn = step  # step is already 1-based turn_num
                                 if step_turn not in steps_recorded_turns:
                                     # Record model_input from step messages (mini-agent stores TOS URLs, not base64)
                                     step_messages = fetched_step.get("messages") if isinstance(fetched_step.get("messages"), list) else None
@@ -719,7 +726,7 @@ async def run_mini_agent_rollout(
                                         steps_recorded_turns.add(step_turn)
                             elif rollout_recorder is not None:
                                 # Fall back to event-captured data if step payload is missing.
-                                step_turn = step_index + 1
+                                step_turn = step  # step is already 1-based turn_num
                                 if step_turn not in steps_recorded_turns:
                                     # Skip model_input - no step data, event may have base64
                                     actions_ok = True

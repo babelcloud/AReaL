@@ -362,16 +362,94 @@ class CUAAgentWorkflow(RolloutWorkflow):
             logger.warning("CUA evaluate_execution failed: %s", e)
             eval_result = {}
 
+        # #region agent log - Hypothesis G: Fix reward calculation based on gym API structure
+        # Gym API returns: { success, result: { score, success, validators: [...] } }
+        # Each validator has: { id, pass, score, weight, ... }
+        # Total reward should be calculated from result.score or weighted sum of validators
         reward = 0.0
         if isinstance(eval_result, dict):
-            r = eval_result.get("reward") or eval_result.get("score")
-            if isinstance(r, (int, float)):
-                reward = float(r)
-            success = eval_result.get("success")
-            if success is True and reward == 0.0:
-                reward = 1.0
-            elif success is False and reward == 0.0:
-                reward = 0.0
+            result_data = eval_result.get("result", {})
+            
+            # Method 1: Use result.score if available (this is the total weighted score from gym)
+            if isinstance(result_data, dict):
+                total_score = result_data.get("score")
+                if isinstance(total_score, (int, float)):
+                    reward = float(total_score)
+            
+            # Method 2: If no result.score, calculate from validators
+            if reward == 0.0 and isinstance(result_data, dict):
+                validators = result_data.get("validators", [])
+                if isinstance(validators, list) and validators:
+                    weighted_sum = 0.0
+                    total_weight = 0.0
+                    for v in validators:
+                        if not isinstance(v, dict):
+                            continue
+                        v_score = v.get("score", 0.0)
+                        v_weight = v.get("weight", 0.0)
+                        if isinstance(v_score, (int, float)) and isinstance(v_weight, (int, float)):
+                            weighted_sum += float(v_score) * float(v_weight)
+                            total_weight += float(v_weight)
+                    if total_weight > 0:
+                        reward = weighted_sum / total_weight
+            
+            # Method 3: Fallback to top-level reward/score (legacy)
+            if reward == 0.0:
+                r = eval_result.get("reward") or eval_result.get("score")
+                if isinstance(r, (int, float)):
+                    reward = float(r)
+            
+            # Method 4: Binary reward based on success if still 0
+            if reward == 0.0:
+                success = eval_result.get("success")
+                if success is True:
+                    reward = 1.0
+        
+        with open("/home/zhenwei/.cursor/debug-719a0d.log", "a") as _f:
+            import json as _json_debug
+            result_data = eval_result.get("result", {}) if isinstance(eval_result, dict) else {}
+            validators = result_data.get("validators", []) if isinstance(result_data, dict) else []
+            _f.write(_json_debug.dumps({"sessionId":"719a0d","hypothesisId":"G","location":"cua_workflow.py:reward_calc","message":"reward_calculated","data":{"reward":reward,"result_score":result_data.get("score") if isinstance(result_data, dict) else None,"num_validators":len(validators),"validators_scores":[{"id":v.get("id"),"score":v.get("score"),"weight":v.get("weight")} for v in validators[:5]] if validators else []},"timestamp":__import__("time").time()}) + "\n")
+        # #endregion
+
+        # #region agent log
+        import json as _json_debug
+        with open("/home/zhenwei/.cursor/debug-719a0d.log", "a") as _f:
+            _f.write(_json_debug.dumps({"sessionId":"719a0d","hypothesisId":"A,B,C,D,E","location":"cua_workflow.py:after_eval","message":"eval_result_and_reward","data":{"eval_result":str(eval_result)[:500],"reward":reward,"rollout_recorder_exists":rollout_recorder is not None,"task_id":task_id,"execution_id":ctx.execution_id},"timestamp":__import__("time").time()}) + "\n")
+        # #endregion
+
+        # #region agent log - Record validation with correct format for Monitor
+        # Monitor expects details_json to have: genv_evaluation (full gym result) for validators display
+        # and evaluation_output/gym_evaluation/genv_evaluation for "evaluate output" button
+        if rollout_recorder is not None:
+            try:
+                overall_success = eval_result.get("success") if isinstance(eval_result, dict) else None
+                result_data = eval_result.get("result", {}) if isinstance(eval_result, dict) else {}
+                validators = result_data.get("validators", []) if isinstance(result_data, dict) else []
+                
+                # Build details_json in the format Monitor expects:
+                # - genv_evaluation: full gym evaluate result (for validators extraction)
+                # - evaluation_output: same as genv_evaluation (for "evaluate output" button)
+                details_json = {
+                    "genv_evaluation": eval_result,  # Full gym evaluate result
+                    "evaluation_output": eval_result,  # For "evaluate output" button
+                    "reward": reward,
+                    "task_id": task_id,
+                    "execution_id": ctx.execution_id,
+                }
+                
+                rollout_recorder.record_validation(
+                    success=overall_success,
+                    actual_result=f"reward={reward}, validators={len(validators)}",
+                    details_json=details_json,
+                )
+                
+                with open("/home/zhenwei/.cursor/debug-719a0d.log", "a") as _f:
+                    _f.write(_json_debug.dumps({"sessionId":"719a0d","hypothesisId":"I","location":"cua_workflow.py:record_validation","message":"validation_recorded_correct_format","data":{"success":overall_success,"reward":reward,"num_validators":len(validators),"details_json_keys":list(details_json.keys())},"timestamp":__import__("time").time()}) + "\n")
+            except Exception as _e:
+                with open("/home/zhenwei/.cursor/debug-719a0d.log", "a") as _f:
+                    _f.write(_json_debug.dumps({"sessionId":"719a0d","hypothesisId":"I","location":"cua_workflow.py:record_validation","message":"record_validation_failed","data":{"error":str(_e)},"timestamp":__import__("time").time()}) + "\n")
+        # #endregion
 
         try:
             await terminate_execution(
@@ -381,6 +459,33 @@ class CUAAgentWorkflow(RolloutWorkflow):
             )
         except Exception as e:
             logger.debug("CUA terminate_execution: %s", e)
+
+        # #region agent log - Hypothesis H: complete_rollout needs summary_json for evaluate output
+        if rollout_recorder is not None:
+            try:
+                import json as _json_summary
+                # Build summary_json with full evaluate result for Monitor's "evaluate output" display
+                summary_data = {
+                    "evaluate_output": eval_result if isinstance(eval_result, dict) else None,
+                    "reward": reward,
+                    "task_success": eval_result.get("success") if isinstance(eval_result, dict) else None,
+                    "num_turns": run_result.get("num_turns") if isinstance(run_result, dict) else None,
+                    "execution_id": ctx.execution_id,
+                    "task_id": task_id,
+                }
+                rollout_recorder.complete_rollout(
+                    reward=reward,
+                    task_success=eval_result.get("success") if isinstance(eval_result, dict) else None,
+                    validation_passed=eval_result.get("success") if isinstance(eval_result, dict) else None,
+                    num_turns=run_result.get("num_turns") if isinstance(run_result, dict) else None,
+                    summary_json=_json_summary.dumps(summary_data, default=str),
+                )
+                with open("/home/zhenwei/.cursor/debug-719a0d.log", "a") as _f:
+                    _f.write(_json_debug.dumps({"sessionId":"719a0d","hypothesisId":"H","location":"cua_workflow.py:complete_rollout","message":"complete_rollout_with_summary","data":{"reward":reward,"has_summary":True,"eval_result_keys":list(eval_result.keys()) if isinstance(eval_result, dict) else None},"timestamp":__import__("time").time()}) + "\n")
+            except Exception as _e:
+                with open("/home/zhenwei/.cursor/debug-719a0d.log", "a") as _f:
+                    _f.write(_json_debug.dumps({"sessionId":"719a0d","hypothesisId":"H","location":"cua_workflow.py:complete_rollout","message":"complete_rollout_failed","data":{"error":str(_e)},"timestamp":__import__("time").time()}) + "\n")
+        # #endregion
 
         traj = _events_to_trajectory_tensors(events, self.tokenizer, reward)
         return traj

@@ -31,7 +31,6 @@ allocation_mode: vllm:d1p1t1+d1p1t1
 rollout:
   experiment_name: ${experiment_name}
   trial_name: ${trial_name}
-  max_concurrent_rollouts: 8
   consumer_batch_size: ${train_dataset.batch_size}
   fileroot: ${cluster.fileroot}
   tokenizer_path: ${tokenizer_path}
@@ -102,7 +101,7 @@ ref:
 train_dataset:
   path: cua_gym
   type: rl
-  batch_size: 2
+  batch_size: 4
   shuffle: true
 valid_dataset:
   path: cua_gym
@@ -118,8 +117,9 @@ recover:
   experiment_name: ${experiment_name}
   trial_name: ${trial_name}
   fileroot: ${cluster.fileroot}
-  mode: disabled
+  mode: auto
 evaluator:
+  freq_steps: 10
   experiment_name: ${experiment_name}
   trial_name: ${trial_name}
   fileroot: ${cluster.fileroot}
@@ -128,4 +128,4 @@ stats_logger:
   trial_name: ${trial_name}
   fileroot: ${cluster.fileroot}
   wandb:
-    mode: disabled
+    mode: offline
